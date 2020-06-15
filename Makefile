@@ -13,11 +13,13 @@ EXECUTABLE	:= main.exe
 SOURCEDIRS	:= $(SRC)
 INCLUDEDIRS	:= $(INCLUDE)
 LIBDIRS		:= $(LIB)
+MKDIR		:= mkdir
 else
 EXECUTABLE	:= main
 SOURCEDIRS	:= $(shell find $(SRC) -type d)
 INCLUDEDIRS	:= $(shell find $(INCLUDE) -type d)
 LIBDIRS		:= $(shell find $(LIB) -type d)
+MKDIR		:= mkdir -p
 endif
 
 CINCLUDES	:= $(patsubst %,-I%, $(INCLUDEDIRS:%/=%))
@@ -40,5 +42,8 @@ run: all
 .c.o:
 	$(CC) $(CFLAGS) $(CINCLUDES) -c $< -o $@
 
-$(BIN)/$(EXECUTABLE): $(OBJECTS)
+$(BIN)/$(EXECUTABLE): $(OBJECTS) | $(BIN)/
 	$(CC) $(CLIBS) -o $@ $(LIBRARIES) $^
+
+$(BIN)/:
+	$(MKDIR) $@
