@@ -1,7 +1,19 @@
 // Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
-#include "snprintf.h"
+#include <limits.h>
+#include <stdlib.h>
 
 #include "minunit.h"
+
+#include "tests-snprintf.h"
+
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wextra-semi-stmt"
+// because of MinUnit
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#pragma clang diagnostic ignored "-Wfloat-equal"
+#endif
 
 
 static char msg[32] = {0, };
@@ -37,14 +49,26 @@ MU_TEST(test_buffer_length_2) {
 	TEST(1, "1", ret);
 }
 
+MU_TEST(test_buffer_length_3) {
+	int ret = snprintf(msg, 3, "%d", 123);
+	TEST(2, "12", ret);
+}
+
 #if __GNUC__ >= 7
 #pragma GCC diagnostic pop
 #endif
 
 MU_TEST(test_char_dec) {
-	int ret = snprintf(msg, sizeof(msg), "%hhd% hhd %hhu",
-		(char)123, (char)123, (char)123);
-	TEST(11, "123 123 123", ret);
+	int ret = snprintf(msg, sizeof(msg), "%hhd %hhd% hhd %hhu",
+		(char)0, (char)123, (char)123, (char)123);
+	TEST(13, "0 123 123 123", ret);
+}
+
+MU_TEST(test_char_dec_min_and_max) {
+	snprintf(msg, sizeof(msg), "%hhd", (char)CHAR_MIN);
+	mu_check(atoll(msg) == CHAR_MIN);
+	snprintf(msg, sizeof(msg), "%hhd", (char)CHAR_MAX);
+	mu_check(atoll(msg) == CHAR_MAX);
 }
 
 MU_TEST(test_char_dec_negative) {
@@ -54,9 +78,16 @@ MU_TEST(test_char_dec_negative) {
 }
 
 MU_TEST(test_short_dec) {
-	int ret = snprintf(msg, sizeof(msg), "%hd% hd %hu",
-		(short)1230, (short)1230, (short)1230);
-	TEST(14, "1230 1230 1230", ret);
+	int ret = snprintf(msg, sizeof(msg), "%hd %hd% hd %hu",
+		(short)0, (short)1230, (short)1230, (short)1230);
+	TEST(16, "0 1230 1230 1230", ret);
+}
+
+MU_TEST(test_short_dec_min_and_max) {
+	snprintf(msg, sizeof(msg), "%hd", (short)SHRT_MIN);
+	mu_check(atoll(msg) == SHRT_MIN);
+	snprintf(msg, sizeof(msg), "%hd", (short)SHRT_MAX);
+	mu_check(atoll(msg) == SHRT_MAX);
 }
 
 MU_TEST(test_short_dec_negative) {
@@ -66,8 +97,15 @@ MU_TEST(test_short_dec_negative) {
 }
 
 MU_TEST(test_int_dec) {
-	int ret = snprintf(msg, sizeof(msg), "%d% d %u", 123, 123, 123);
-	TEST(11, "123 123 123", ret);
+	int ret = snprintf(msg, sizeof(msg), "%d %d% d %u", 0, 123, 123, 123);
+	TEST(13, "0 123 123 123", ret);
+}
+
+MU_TEST(test_int_dec_min_and_max) {
+	snprintf(msg, sizeof(msg), "%d", INT_MIN);
+	mu_check(atoll(msg) == INT_MIN);
+	snprintf(msg, sizeof(msg), "%d", INT_MAX);
+	mu_check(atoll(msg) == INT_MAX);
 }
 
 MU_TEST(test_int_dec_negative) {
@@ -100,9 +138,17 @@ MU_TEST(test_int_dec_width_as_parameter) {
 	TEST(5, "  123", ret);
 }
 
+MU_TEST(test_int_dec_random) {
+    time_t tt;
+	srand((unsigned int)time(&tt));
+	int d = rand();
+	snprintf(msg, sizeof(msg), "%d", d);
+	mu_check(atoll(msg) == d);
+}
+
 MU_TEST(test_int_hex) {
-	int ret = snprintf(msg, sizeof(msg), "%x %#x", 123, 123);
-	TEST(7, "7b 0x7b", ret);
+	int ret = snprintf(msg, sizeof(msg), "%x %x %#x", 0, 123, 123);
+	TEST(9, "0 7b 0x7b", ret);
 }
 
 MU_TEST(test_int_hex_uppercase) {
@@ -144,6 +190,18 @@ MU_TEST(test_long_long_dec) {
 	TEST(12, "123000000000", ret);
 }
 
+MU_TEST(test_long_long_dec_min) {
+	long long d = LLONG_MIN;
+	snprintf(msg, sizeof(msg), "%lld", d);
+	mu_check(atoll(msg) == d);
+}
+
+MU_TEST(test_long_long_dec_max) {
+	long long d = LLONG_MAX;
+	snprintf(msg, sizeof(msg), "%lld", d);
+	mu_check(atoll(msg) == d);
+}
+
 MU_TEST(test_long_long_hex) {
 	int ret = snprintf(msg, sizeof(msg), "%llx %llX", 123000000000ll, 123000000000ll);
 	TEST(21, "1ca35f0e00 1CA35F0E00", ret);
@@ -155,46 +213,59 @@ MU_TEST(test_long_long_hex_alternative) {
 }
 
 MU_TEST(test_long_long_hex_width_as_type) {
-	const char expected[] = "0000000000000000000000000000000000000000000000000000001ca35f0e00";
+	const char expected[] = "00000000000000000000001ca35f0e00";
 	long long x = 123000000000ll;
 	int ret = snprintf(msg, sizeof(msg), "%0*llx", (int)(sizeof(x) * 2), x);
 	TEST(sizeof(x) * 2, expected + strlen(expected) - sizeof(x) * 2, ret);
 }
 
+MU_TEST(test_long_long_hex_max) {
+	char expected[] = "ffffffffffffffffffffffffffffffff";
+	unsigned long long x = ULLONG_MAX;
+	int ret = snprintf(msg, sizeof(msg), "%llx", x);
+	expected[sizeof(x) * 2] = '\0';
+	TEST(sizeof(x) * 2, expected, ret);
+}
+
 MU_TEST(test_double_f) {
-	int ret = snprintf(msg, sizeof(msg), "%f %F",
-		123.0, 123.0 + 1.0 / 3);
-	TEST(21, "123.000000 123.333333", ret);
+	int ret = snprintf(msg, sizeof(msg), "%f %f %F",
+		0.0, 123.0, 123.0 + 1.0 / 3);
+	TEST(30, "0.000000 123.000000 123.333333", ret);
 }
 
 MU_TEST(test_double_f_precision_0) {
-	int ret = snprintf(msg, sizeof(msg), "%.0f %.0F",
-		123.0, 123.0 + 1.0 / 3);
-	TEST(7, "123 123", ret);
+	int ret = snprintf(msg, sizeof(msg), "%.0f %.0f %.0F",
+		0.0, 123.0, 123.0 + 1.0 / 3);
+	TEST(9, "0 123 123", ret);
 }
 
 MU_TEST(test_double_f_precision_2_3) {
-	int ret = snprintf(msg, sizeof(msg), "%2.3f %2.3F",
-		123.0, 123.0 + 1.0 / 3);
-	TEST(15, "123.000 123.333", ret);
+	int ret = snprintf(msg, sizeof(msg), "%2.3f %2.3f %2.3F",
+		0.0, 123.0, 123.0 + 1.0 / 3);
+	TEST(21, "0.000 123.000 123.333", ret);
+}
+
+MU_TEST(test_double_e_zero) {
+	int ret = snprintf(msg, sizeof(msg), "%e %E", 0.0, 0.0);
+	TEST(25, "0.000000e+00 0.000000E+00", ret);
 }
 
 MU_TEST(test_double_e) {
 	int ret = snprintf(msg, sizeof(msg), "%e %E",
 		123.0 + 1.0 / 3, 123.0 + 1.0 / 3);
-	TEST(27, "1.233333e+002 1.233333E+002", ret);
+	TEST(25, "1.233333e+02 1.233333E+02", ret);
 }
 
 MU_TEST(test_double_e_precision_0) {
-	int ret = snprintf(msg, sizeof(msg), "%.0e %.0E",
-		123.0 + 1.0 / 3, 123.0 + 1.0 / 3);
-	TEST(13, "1e+002 1E+002", ret);
+	int ret = snprintf(msg, sizeof(msg), "%.0e %.0E %.0e %.0E",
+		0.0, 0.0, 123.0 + 1.0 / 3, 123.0 + 1.0 / 3);
+	TEST(23, "0e+00 0E+00 1e+02 1E+02", ret);
 }
 
 MU_TEST(test_double_e_precision_2_3) {
 	int ret = snprintf(msg, sizeof(msg), "%2.3e %2.3E",
 		123.0 + 1.0 / 3, 123.0 + 1.0 / 3);
-	TEST(21, "1.233e+002 1.233E+002", ret);
+	TEST(19, "1.233e+02 1.233E+02", ret);
 }
 
 MU_TEST(test_double_g) {
@@ -204,9 +275,9 @@ MU_TEST(test_double_g) {
 }
 
 MU_TEST(test_double_g_precision_0) {
-	int ret = snprintf(msg, sizeof(msg), "%.0g %.0G",
-		1.0 / 123000000.0, 1.0 / 123000000.0);
-	TEST(11, "8e-09 8E-09", ret);
+	int ret = snprintf(msg, sizeof(msg), "%.0g %.0G %.0g %.0G",
+		0.0, 0.0, 1.0 / 123000000.0, 1.0 / 123000000.0);
+	TEST(23, "0e+00 0E+00 8e-09 8E-09", ret);
 }
 
 MU_TEST(test_double_g_precision_2_7) {
@@ -240,6 +311,11 @@ MU_TEST(test_string_width_20_precision_20) {
 	TEST(20, "               Hello", ret);
 }
 
+MU_TEST(test_string_empty) {
+	int ret = snprintf(msg, sizeof(msg), "%s", "");
+	TEST(0, "", ret);
+}
+
 MU_TEST(test_string_too_long) {
 	const char *str = "This is very long message and it is much longer than buffer!";
 	int ret = snprintf(msg, sizeof(msg), "%s", str);
@@ -254,6 +330,16 @@ MU_TEST(test_strings) {
 MU_TEST(test_chars) {
 	int ret = snprintf(msg, sizeof(msg), "%c%c%c%c%c", 'H', 'e', 'l', 'l', 'o');
 	TEST(5, "Hello", ret);
+}
+
+MU_TEST(test_pointer_null) {
+	int ret = snprintf(msg, sizeof(msg), "%p", (void *)0);
+	TEST(5, "(nil)", ret);
+}
+
+MU_TEST(test_pointer) {
+	int ret = snprintf(msg, sizeof(msg), "%p", (void *)0x12345678aabbccdd);
+	TEST(18, "0x12345678aabbccdd", ret);
 }
 
 MU_TEST(test_percent) {
@@ -276,20 +362,25 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_buffer_length_0);
 	MU_RUN_TEST(test_buffer_length_1);
 	MU_RUN_TEST(test_buffer_length_2);
+	MU_RUN_TEST(test_buffer_length_3);
 
 	MU_RUN_TEST(test_char_dec);
+	MU_RUN_TEST(test_char_dec_min_and_max);
 	MU_RUN_TEST(test_char_dec_negative);
 
 	MU_RUN_TEST(test_short_dec);
+	MU_RUN_TEST(test_short_dec_min_and_max);
 	MU_RUN_TEST(test_short_dec_negative);
 
 	MU_RUN_TEST(test_int_dec);
+	MU_RUN_TEST(test_int_dec_min_and_max);
 	MU_RUN_TEST(test_int_dec_negative);
 	MU_RUN_TEST(test_int_dec_width_10);
 	MU_RUN_TEST(test_int_dec_width_31_and_0_padded);
 	MU_RUN_TEST(test_int_dec_width_31_and_align_left);
 	MU_RUN_TEST(test_int_dec_width_2);
 	MU_RUN_TEST(test_int_dec_width_as_parameter);
+	MU_RUN_TEST(test_int_dec_random);
 
 	MU_RUN_TEST(test_int_hex);
 	MU_RUN_TEST(test_int_hex_uppercase);
@@ -301,14 +392,18 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_long_hex_width_as_type);
 
 	MU_RUN_TEST(test_long_long_dec);
+	MU_RUN_TEST(test_long_long_dec_min);
+	MU_RUN_TEST(test_long_long_dec_max);
 	MU_RUN_TEST(test_long_long_hex);
 	MU_RUN_TEST(test_long_long_hex_alternative);
 	MU_RUN_TEST(test_long_long_hex_width_as_type);
+	MU_RUN_TEST(test_long_long_hex_max);
 
 	MU_RUN_TEST(test_double_f);
 	MU_RUN_TEST(test_double_f_precision_0);
 	MU_RUN_TEST(test_double_f_precision_2_3);
 	MU_RUN_TEST(test_double_e);
+	MU_RUN_TEST(test_double_e_zero);
 	MU_RUN_TEST(test_double_e_precision_0);
 	MU_RUN_TEST(test_double_e_precision_2_3);
 	MU_RUN_TEST(test_double_g);
@@ -316,6 +411,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_g_precision_2_7);
 
 	MU_RUN_TEST(test_string);
+	MU_RUN_TEST(test_string_empty);
 	MU_RUN_TEST(test_string_width_20);
 	MU_RUN_TEST(test_string_width_20_and_align_left);
 	MU_RUN_TEST(test_string_width_20_precision_2);
@@ -324,6 +420,9 @@ MU_TEST_SUITE(test_suite) {
 
 	MU_RUN_TEST(test_strings);
 	MU_RUN_TEST(test_chars);
+
+	MU_RUN_TEST(test_pointer_null);
+	MU_RUN_TEST(test_pointer);
 
 	MU_RUN_TEST(test_percent);
 	MU_RUN_TEST(test_counters);
@@ -335,3 +434,8 @@ int tests_snprintf(void) {
 	MU_REPORT();
 	return MU_EXIT_CODE;
 }
+
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif

@@ -20,6 +20,12 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 Revision History:
+2.1: by Miroslaw Toton (mirtoto)
+   * fix problem with very big and very low "long long" values
+   * change exponent width from 3 to 2
+   * fix zero value for floating
+   * support for "p" (%p)
+
 2.0: by Miroslaw Toton (mirtoto)
    * move all defines & macros from header to codefile
    * support for "long long" (%llu, %lld, %llo, %llx)
@@ -52,21 +58,25 @@ It understands:
      %s                  string
      %c                  character
      %%                  %
+   * Other:
+     %p                  pointer
 
  Formating conversion flags:
-   - justify left
-   + Justify right or put a plus if number
-   # prefix 0x, 0X for hexa and 0 for octal
-   * precision/witdth is specify as an (int) in the arguments
- ' ' leave a blank for number with no sign
-   l the later should be a long
-   h the later should be a short
+    - align left
+    + Justify right or put a plus if number
+    # prefix 0x, 0X for hexa and 0 for octal
+    * precision/witdth is specify as an (int) in the arguments
+  ' ' leave a blank for number with no sign
+    l the later should be a long
+   ll the later should be a long long
+    h the later should be a short
+   hh the later should be a char
 
 Format:
-  snprintf(holder, sizeof_holder, format, ...)
+  snprintf(string, sizeof_string, format, ...)
 
 Return values:
-  (sizeof_holder - 1)
+  (sizeof_string - 1)
 
 
  THANKS(for the patches and ideas):
@@ -85,13 +95,19 @@ Alain Magloire: alainm@rcsm.ee.mcgill.ca
 
 #include "snprintf.h"
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#endif
+
+
 /*
  * For the FLOATING POINT FORMAT :
  *  the challenge was finding a way to
  *  manipulate the Real numbers without having
- *  to resort to mathematical function(it
+ *  to resort to mathematical function (it
  *  would require to link with -lm) and not
- *  going down to the bit pattern(not portable)
+ *  going down to the bit pattern (not portable)
  *
  *  so a number, a real is:
 
@@ -107,139 +123,136 @@ Alain Magloire: alainm@rcsm.ee.mcgill.ca
     from then it was simple math
  */
 
-/*
- * size of the buffer for the integral part
- * and the fraction part
- */
-#define SNP_MAX_INT 99 + 1 /* 1 for the null */
-#define SNP_MAX_FRACT 29 + 1
-
-/*
- * numtoa() uses PRIVATE buffers to store the results,
- * So this function is not reentrant
- */
-#define itoa(n) numtoa(n, 10, 0, (char **)0)
-#define otoa(n) numtoa(n, 8, 0, (char **)0)
-#define htoa(n) numtoa(n, 16, 0, (char **)0)
-#define dtoa(n, p, f) numtoa(n, 10, p, f)
-
 /* this struct holds everything we need */
 struct DATA {
   int length;
   int counter;
-  char *holder;
+  char *string;
   const char *pf;
-  /* FLAGS */
-  int width, precision;
-  int justify;
-  int square, space, dot, star_w, star_p, a_long;
+
+#define WIDTH_NOT_FOUND       -1
+
+  int width;
+
+#define PRECISION_NOT_FOUND   -1
+
+  int precision;
+
+#define ALIGN_DEFAULT         0
+#define ALIGN_RIGHT           1
+#define ALIGN_LEFT            2
+
+  unsigned int align:2;
+  unsigned int is_square:1;
+  unsigned int is_space:1;
+  unsigned int is_dot:1;
+  unsigned int is_star_w:1;
+  unsigned int is_star_p:1;
+
+#define INT_LEN_DEFAULT       0
+#define INT_LEN_LONG          1
+#define INT_LEN_LONG_LONG     2
+#define INT_LEN_SHORT         3
+#define INT_LEN_CHAR          4
+
+  unsigned int a_long:3;
+
+  unsigned int rfu:6;
+
   char pad;
-  char rfu[3]; // slop
+
+  char slop[5];
 };
 
-/* those are defines specific to snprintf to hopefully
- * make the code clearer :-)
- */
-#define SNP_RIGHT 1
-#define SNP_LEFT 0
-#define SNP_NOT_FOUND -1
-#define SNP_FOUND 1
-#define SNP_LEN_LONG 1
-#define SNP_LEN_LONG_LONG 2
-#define SNP_LEN_SHORT 3
-#define SNP_LEN_CHAR 4
-#define SNP_MAX_FIELD 15
-#define SNP_DOT 1
-
 /* the conversion flags */
-#define isflag(c) (                                   \
-  (c) == '#' || (c) == ' ' ||                         \
-  (c) == '*' || (c) == '+' ||                         \
-  (c) == '-' || (c) == '.' ||                         \
-  isdigit(c))
+#define IS_CONV_FLAG(c) (isdigit(c) ||                  \
+  (c) == '#' || (c) == ' ' ||                           \
+  (c) == '*' || (c) == '+' ||                           \
+  (c) == '-' || (c) == '.')
 
 /* round off to the precision */
 #define ROUND(d, p) \
   ((d < 0.) ? d - pow_10(-(p)->precision) * 0.5 : d + pow_10(-(p)->precision) * 0.5)
 
 /* set default precision */
-#define DEF_PREC(p)                                   \
-  if ((p)->precision == SNP_NOT_FOUND) {              \
-    (p)->precision = 6;                               \
+#define DEF_PREC(p)                                     \
+  if ((p)->precision == PRECISION_NOT_FOUND) {          \
+    (p)->precision = 6;                                 \
   }
 
 /* put a char */
-#define PUT_CHAR(c, p)                                \
-  if ((p)->counter < (p)->length) {                   \
-    *(p)->holder++ = (c);                             \
-    (p)->counter++;                                   \
+#define PUT_CHAR(c, p)                                  \
+  if ((p)->counter < (p)->length) {                     \
+    *(p)->string++ = (c);                               \
+    (p)->counter++;                                     \
   }
 
-#define PUT_PLUS(d, p)                                \
-  if ((d) > 0. && (p)->justify == SNP_RIGHT) {        \
-    PUT_CHAR('+', p);                                 \
+#define PUT_PLUS(d, p)                                  \
+  if ((d) > 0 && (p)->align == ALIGN_RIGHT) {           \
+    PUT_CHAR('+', p);                                   \
   }
 
-#define PUT_SPACE(d, p)                               \
-  if ((p)->space == SNP_FOUND && (d) > 0.) {          \
-    PUT_CHAR(' ', p);                                 \
+#define PUT_SPACE(d, p)                                 \
+  if ((p)->is_space && (d) > 0) {                       \
+    PUT_CHAR(' ', p);                                   \
   }
 
 /* pad right */
-#define PAD_RIGHT(p)                                  \
-  if ((p)->width > 0 && (p)->justify != SNP_LEFT) {   \
-    for (; (p)->width > 0; (p)->width--) {            \
-      PUT_CHAR((p)->pad, p);                          \
-    }                                                 \
+#define PAD_RIGHT(p)                                    \
+  if ((p)->width > 0 && (p)->align != ALIGN_LEFT) {     \
+    for (; (p)->width > 0; (p)->width--) {              \
+      PUT_CHAR((p)->pad, p);                            \
+    }                                                   \
   }
 
 /* pad left */
-#define PAD_LEFT(p)                                   \
-  if ((p)->width > 0 && (p)->justify == SNP_LEFT) {   \
-    for (; (p)->width > 0; (p)->width--) {            \
-      PUT_CHAR((p)->pad, p);                          \
-    }                                                 \
+#define PAD_LEFT(p)                                     \
+  if ((p)->width > 0 && (p)->align == ALIGN_LEFT) {     \
+    for (; (p)->width > 0; (p)->width--) {              \
+      PUT_CHAR((p)->pad, p);                            \
+    }                                                   \
   }
 
 /* if width and prec. in the args */
-#define STAR_ARGS(p)                                  \
-  if ((p)->star_w == SNP_FOUND) {                     \
-    (p)->width = va_arg(args, int);                   \
-  }                                                   \
-  if ((p)->star_p == SNP_FOUND) {                     \
-    (p)->precision = va_arg(args, int);               \
+#define STAR_ARGS(p)                                    \
+  if ((p)->is_star_w) {                                 \
+    (p)->width = va_arg(args, int);                     \
+  }                                                     \
+  if ((p)->is_star_p) {                                 \
+    (p)->precision = va_arg(args, int);                 \
   }
 
-/* put number of given type to d */
-#define INPUT_NUMBER(p, type, d)                      \
-  if ((p)->a_long == SNP_LEN_LONG_LONG) {             \
-    (d) = va_arg(args, type long long);               \
-  } else if ((p)->a_long == SNP_LEN_LONG) {           \
-    (d) = va_arg(args, type long);                    \
-  } else {                                            \
-    type int a = va_arg(args, type int);              \
-    if ((p)->a_long == SNP_LEN_SHORT) {               \
-      (d) = (type short)a;                            \
-    } else if ((p)->a_long == SNP_LEN_CHAR) {         \
-      (d) = (type char)a;                             \
-    } else {                                          \
-      (d) = a;                                        \
-    }                                                 \
+/* put number of given type to ll */
+#define INPUT_NUMBER(p, type, ll)                       \
+  if ((p)->a_long == INT_LEN_LONG_LONG) {               \
+    (ll) = (long long)va_arg(args, type long long);     \
+  } else if ((p)->a_long == INT_LEN_LONG) {             \
+    (ll) = (long long)va_arg(args, type long);          \
+  } else {                                              \
+    type int a = va_arg(args, type int);                \
+    if ((p)->a_long == INT_LEN_SHORT) {                 \
+      (ll) = (type short)a;                             \
+    } else if ((p)->a_long == INT_LEN_CHAR) {           \
+      (ll) = (type char)a;                              \
+    } else {                                            \
+      (ll) = a;                                         \
+    }                                                   \
   }
 
 /* the floating point stuff */
 static double pow_10(int);
 static int log_10(double);
 static double integral(double, double *);
-static char *numtoa(double, int, int, char **);
+static char *floattoa(double, int, int, char **);
+static char *inttoa(long long, int, int);
 
 /* for the format */
 static void conv_flag(char *, struct DATA *);
 static void floating(struct DATA *, double);
 static void exponent(struct DATA *, double);
-static void decimal(struct DATA *, double);
-static void octal(struct DATA *, double);
-static void hexa(struct DATA *, double);
+static void decimal(struct DATA *, long long);
+static void octal(struct DATA *, long long);
+static void hexa(struct DATA *, long long);
 static void strings(struct DATA *, char *);
 
 /*
@@ -274,7 +287,9 @@ static int log_10(double r) {
   int i = 0;
   double result = 1.;
 
-  if (r < 0.) {
+  if (r == 0.) {
+    return 0;
+  } else if (r < 0.) {
     r = -r;
   }
 
@@ -339,30 +354,37 @@ static double integral(double real, double *ip) {
   return (real - real_integral);
 }
 
-#define PRECISION 1.e-6
+/* size of the buffer for the integral part */
+#define MAX_INTEGRAL_SIZE (99 + 1)
+/* size of the buffer for the fraction part */
+#define MAX_FRACTION_SIZE (29 + 1)
+/* precision */
+#define PRECISION (1.e-6)
+
 /* 
  * return an ascii representation of the integral part of the number
  * and set fract to be an ascii representation of the fraction part
  * the container for the fraction and the integral part or staticly
  * declare with fix size 
  */
-static char *numtoa(double number, int base, int precision, char **fract) {
-  int i, j;
+static char *floattoa(double number, int base, int precision, char **fract) {
+  int i, j, ch;
   double ip, fp; /* integer and fraction part */
   double fraction;
-  int digits = SNP_MAX_INT - 1;
-  static char integral_part[SNP_MAX_INT];
-  static char fraction_part[SNP_MAX_FRACT];
+  int digits = MAX_INTEGRAL_SIZE - 1;
+  static char integral_part[MAX_INTEGRAL_SIZE];
+  static char fraction_part[MAX_FRACTION_SIZE];
   double sign;
-  int ch;
 
   /* taking care of the obvious case: 0.0 */
   if (number == 0.) {
-    integral_part[0] = '0';
-    integral_part[1] = '\0';
-    fraction_part[0] = '0';
-    fraction_part[1] = '\0';
+    memcpy(integral_part, "0", 2);
+    memcpy(fraction_part, "0", 2);
 
+    if (fract != NULL) {
+      *fract = fraction_part;
+    }
+    
     return integral_part;
   }
 
@@ -413,7 +435,7 @@ static char *numtoa(double number, int base, int precision, char **fract) {
   }
 
   /* the fractionnal part */
-  for (i = 0, fp = fraction; precision > 0 && i < SNP_MAX_FRACT; i++, precision--) {
+  for (i = 0, fp = fraction; precision > 0 && i < MAX_FRACTION_SIZE; i++, precision--) {
     fraction_part[i] = (char)(int)((fp + PRECISION) * 10. + '0');
     if (!isdigit(fraction_part[i])) { /* underflow ? */
       break;
@@ -422,111 +444,149 @@ static char *numtoa(double number, int base, int precision, char **fract) {
   }
   fraction_part[i] = '\0';
 
-  if (fract != (char **)0) {
+  if (fract != NULL) {
     *fract = fraction_part;
   }
 
   return integral_part;
 }
 
-/* for %d and friends, it puts in holder
+// is_signed == 0 - interpret 'number' as unsigned
+// is_signed == 1 - interpret 'number' as signed
+static char *inttoa(long long number, int is_signed, int base) {    
+  static char integral_part[MAX_INTEGRAL_SIZE];
+  int i = 0, j; 
+
+  if (number != 0) {
+    unsigned long long n;
+
+    if (is_signed && number < 0) {
+      n = (unsigned long long)-number;
+    } else {
+      n = (unsigned long long)number;
+    }
+
+    while (n != 0 && i < MAX_INTEGRAL_SIZE - 1) {
+      int r = (int)(n % (unsigned long long)(base));
+      integral_part[i++] = (char)r + (r < 10 ? '0' : 'a' - 10);
+      n /= (unsigned long long)(base);
+    }
+
+    /* put the sign ? */
+    if (is_signed && number < 0) {
+      integral_part[i++] = '-';
+    }
+
+    integral_part[i] = '\0';
+    
+    /* reverse every thing */
+    for (i--, j = 0; j < i; j++, i--) {
+      char tmp = integral_part[i];
+      integral_part[i] = integral_part[j];
+      integral_part[j] = tmp;
+    }
+  } else {
+    memcpy(integral_part, "0", 2);
+  }
+
+  return integral_part;
+}
+
+/* for %d and friends, it puts in string
  * the representation with the right padding
  */
-static void decimal(struct DATA *p, double d) {
-  char *tmp;
-
-  tmp = itoa(d);
-  p->width -= strlen(tmp);
+static void decimal(struct DATA *p, long long d) {
+  char *number = inttoa(d, *p->pf == 'i' || *p->pf == 'd', 10);
+  p->width -= strlen(number);
   PAD_RIGHT(p);
   PUT_PLUS(d, p);
   PUT_SPACE(d, p);
-  while (*tmp) { /* the integral */
-    PUT_CHAR(*tmp, p);
-    tmp++;
+  while (*number != '\0') {
+    PUT_CHAR(*number, p);
+    number++;
   }
   PAD_LEFT(p);
 }
 
 /* for %o octal representation */
-static void octal(struct DATA *p, double d) {
-  char *tmp;
-
-  tmp = otoa(d);
-  p->width -= strlen(tmp);
+static void octal(struct DATA *p, long long d) {
+  char *number = inttoa(d, 0, 8);
+  p->width -= strlen(number);
   PAD_RIGHT(p);
-  if (p->square == SNP_FOUND) /* had prefix '0' for octal */
+  if (p->is_square) { /* had prefix '0' for octal */
     PUT_CHAR('0', p);
-  while (*tmp) { /* octal */
-    PUT_CHAR(*tmp, p);
-    tmp++;
+  }
+  while (*number != '\0') {
+    PUT_CHAR(*number, p);
+    number++;
   }
   PAD_LEFT(p);
 }
 
 /* for %x %X hexadecimal representation */
-static void hexa(struct DATA *p, double d) {
-  char *tmp;
-
-  tmp = htoa(d);
-  p->width -= strlen(tmp);
+static void hexa(struct DATA *p, long long d) {
+  char *number = inttoa(d, 0, 16);
+  p->width -= strlen(number);
   PAD_RIGHT(p);
-  if (p->square == SNP_FOUND) { /* prefix '0x' for hexa */
+  if (p->is_square) { /* prefix '0x' for hexa */
     PUT_CHAR('0', p);
-    PUT_CHAR(*p->pf, p);
+    PUT_CHAR(*p->pf == 'p' ? 'x' : *p->pf, p);
   }
-  while (*tmp) { /* hexa */
-    PUT_CHAR((*p->pf == 'X' ? (char)toupper((unsigned char)*tmp) : *tmp), p);
-    tmp++;
+  while (*number != '\0') {
+    PUT_CHAR((*p->pf == 'X' ? (char)toupper(*number) : *number), p);
+    number++;
   }
   PAD_LEFT(p);
 }
 
 /* %s strings */
-static void strings(struct DATA *p, char *tmp) {
-  int i = (int)strlen(tmp);
-  if (p->precision != SNP_NOT_FOUND) { /* the smallest number */
-    i = (i < p->precision ? i : p->precision);
+static void strings(struct DATA *p, char *str) {
+  int len = (int)strlen(str);
+  if (p->precision != PRECISION_NOT_FOUND && len > p->precision) { /* the smallest number */
+    len = p->precision;
   }
-  p->width -= i;
+  p->width -= len;
   PAD_RIGHT(p);
-  while (i-- > 0) { /* put the sting */
-    PUT_CHAR(*tmp, p);
-    tmp++;
+  while (len-- > 0) { /* put the sting */
+    PUT_CHAR(*str, p);
+    str++;
   }
   PAD_LEFT(p);
 }
 
 /* %f or %g  floating point representation */
 static void floating(struct DATA *p, double d) {
-  char *tmp, *tmp2;
-  int i;
+  char *integral, *fraction;
 
   DEF_PREC(p);
   d = ROUND(d, p);
-  tmp = dtoa(d, p->precision, &tmp2);
+  integral = floattoa(d, 10, p->precision, &fraction);
   /* calculate the padding. 1 for the dot */
-  p->width = p->width - ((d > 0. && p->justify == SNP_RIGHT) ? 1 : 0) -
-    ((p->space == SNP_FOUND) ? 1 : 0) - (int)strlen(tmp) - p->precision - 1;
+  if (d > 0. && p->align == ALIGN_RIGHT) {
+    p->width -= 1;  
+  }
+  p->width -= p->is_space + (int)strlen(integral) + p->precision + 1;
   if (p->precision == 0) {
     p->width += 1;
   }
   PAD_RIGHT(p);
   PUT_PLUS(d, p);
   PUT_SPACE(d, p);
-  while (*tmp) { /* the integral */
-    PUT_CHAR(*tmp, p);
-    tmp++;
+  while (*integral != '\0') { /* the integral */
+    PUT_CHAR(*integral, p);
+    integral++;
   }
-  if (p->precision != 0 || p->square == SNP_FOUND) {
+  if (p->precision != 0 || p->is_square) {
     PUT_CHAR('.', p);                 /* put the '.' */
   }
   if (*p->pf == 'g' || *p->pf == 'G') { /* smash the trailing zeros */
-    for (i = (int)strlen(tmp2) - 1; i >= 0 && tmp2[i] == '0'; i--) {
-      tmp2[i] = '\0';
+    int i;
+    for (i = (int)strlen(fraction) - 1; i >= 0 && fraction[i] == '0'; i--) {
+      fraction[i] = '\0';
     }
   }
-  for (; *tmp2; tmp2++) {
-    PUT_CHAR(*tmp2, p); /* the fraction */
+  for (; *fraction != '\0'; fraction++) {
+    PUT_CHAR(*fraction, p); /* the fraction */
   }
 
   PAD_LEFT(p);
@@ -534,37 +594,38 @@ static void floating(struct DATA *p, double d) {
 
 /* %e %E %g exponent representation */
 static void exponent(struct DATA *p, double d) {
-  char *tmp, *tmp2;
+  char *integral, *fraction, *exponent;
   int j, i;
 
   DEF_PREC(p);
   j = log_10(d);
   d = d / pow_10(j); /* get the Mantissa */
   d = ROUND(d, p);
-  tmp = dtoa(d, p->precision, &tmp2);
+  integral = floattoa(d, 10, p->precision, &fraction);
   /* 1 for unit, 1 for the '.', 1 for 'e|E',
    * 1 for '+|-', 3 for 'exp' */
   /* calculate how much padding need */
-  p->width = p->width -
-    ((d > 0. && p->justify == SNP_RIGHT) ? 1 : 0) -
-    ((p->space == SNP_FOUND) ? 1 : 0) - p->precision - 7;
+  if (d > 0. && p->align == ALIGN_RIGHT) {
+    p->width -= 1;  
+  }
+  p->width -= p->is_space + p->precision + 7;
   PAD_RIGHT(p);
   PUT_PLUS(d, p);
   PUT_SPACE(d, p);
-  while (*tmp) { /* the integral */
-    PUT_CHAR(*tmp, p);
-    tmp++;
+  while (*integral != '\0') { /* the integral */
+    PUT_CHAR(*integral, p);
+    integral++;
   }
-  if (p->precision != 0 || p->square == SNP_FOUND) {
+  if (p->precision != 0 || p->is_square) {
     PUT_CHAR('.', p);                 /* the '.' */
   }
   if (*p->pf == 'g' || *p->pf == 'G') { /* smash the trailing zeros */
-    for (i = (int)strlen(tmp2) - 1; i >= 0 && tmp2[i] == '0'; i--) {
-      tmp2[i] = '\0';
+    for (i = (int)strlen(fraction) - 1; i >= 0 && fraction[i] == '0'; i--) {
+      fraction[i] = '\0';
     }
   }
-  for (; *tmp2; tmp2++) {
-    PUT_CHAR(*tmp2, p); /* the fraction */
+  for (; *fraction != '\0'; fraction++) {
+    PUT_CHAR(*fraction, p); /* the fraction */
   }
 
   if (*p->pf == 'g' || *p->pf == 'e') { /* the exponent put the 'e|E' */
@@ -572,74 +633,72 @@ static void exponent(struct DATA *p, double d) {
   } else {
     PUT_CHAR('E', p);
   }
-  if (j > 0) { /* the sign of the exp */
+  if (j >= 0) { /* the sign of the exp */
     PUT_CHAR('+', p);
   } else {
     PUT_CHAR('-', p);
     j = -j;
   }
-  tmp = itoa((double)j);
-  if (j < 9) { /* need to pad the exponent with 0 '000' */
-    PUT_CHAR('0', p);
-    PUT_CHAR('0', p);
-  } else if (j < 99) {
+  exponent = inttoa(j, 0, 10);
+  if (j <= 9) { /* need to pad the exponent with 0 */
     PUT_CHAR('0', p);
   }
-  while (*tmp) { /* the exponent */
-    PUT_CHAR(*tmp, p);
-    tmp++;
+  while (*exponent != '\0') { /* the exponent */
+    PUT_CHAR(*exponent, p);
+    exponent++;
   }
   PAD_LEFT(p);
 }
 
 /* initialize the conversion specifiers */
 static void conv_flag(char *s, struct DATA *p) {
-  char number[SNP_MAX_FIELD / 2];
-  int i;
-
-  p->precision = p->width = SNP_NOT_FOUND;
-  p->star_w = p->star_p = SNP_NOT_FOUND;
-  p->square = p->space = SNP_NOT_FOUND;
-  p->a_long = p->justify = SNP_NOT_FOUND;
+  p->width = WIDTH_NOT_FOUND;
+  p->precision = PRECISION_NOT_FOUND;
+  p->is_star_w = p->is_star_p = 0;
+  p->is_square = p->is_space = 0;
+  p->a_long = INT_LEN_DEFAULT;
+  p->align = ALIGN_DEFAULT;
   p->pad = ' ';
-  p->dot = SNP_NOT_FOUND;
+  p->is_dot = 0;
 
-  for (; s && *s; s++) {
+  for (; s && *s != '\0'; s++) {
     switch (*s) {
       case ' ':
-        p->space = SNP_FOUND;
+        p->is_space = 1;
         break;
 
       case '#':
-        p->square = SNP_FOUND;
+        p->is_square = 1;
         break;
 
       case '*':
-        if (p->width == SNP_NOT_FOUND) {
-          p->width = p->star_w = SNP_FOUND;
+        if (p->width == WIDTH_NOT_FOUND) {
+          p->width = 1;
+          p->is_star_w = 1;
         } else {
-          p->precision = p->star_p = SNP_FOUND;
+          p->precision = 1;
+          p->is_star_p = 1;
         }
         break;
 
       case '+':
-        p->justify = SNP_RIGHT;
+        p->align = ALIGN_RIGHT;
         break;
 
       case '-':
-        p->justify = SNP_LEFT;
+        p->align = ALIGN_LEFT;
         break;
 
       case '.':
-        if (p->width == SNP_NOT_FOUND) {
+        if (p->width == WIDTH_NOT_FOUND) {
           p->width = 0;
         }
-        p->dot = SNP_DOT;
+        p->is_dot = 1;
         break;
 
       case '0':
         p->pad = '0';
-        if (p->dot == SNP_DOT) {
+        if (p->is_dot) {
           p->precision = 0;
           break;
         }
@@ -654,19 +713,26 @@ static void conv_flag(char *s, struct DATA *p) {
       case '6':
       case '7':
       case '8':
-      case '9': /* gob all the digits */
-        for (i = 0; isdigit(*s); i++, s++) {
-          if (i < SNP_MAX_FIELD / 2 - 1) {
-            number[i] = *s;
-          }
+      case '9': { /* gob all the digits */
+        char number[0x10] = {0, };
+        int i;
+
+        for (i = 0; i < (int)sizeof(number) - 1 && isdigit(*s); i++, s++) {
+          number[i] = *s;
         }
-        number[i] = '\0';
-        if (p->width == SNP_NOT_FOUND) {
+
+        if (p->width == WIDTH_NOT_FOUND) {
           p->width = atoi(number);
         } else {
           p->precision = atoi(number);
         }
+
         s--; /* went to far go back */
+
+        break;
+      }
+
+      default:
         break;
     }
   }
@@ -674,13 +740,13 @@ static void conv_flag(char *s, struct DATA *p) {
 
 int vsnprintf(char *string, size_t length, const char *format, va_list args) {
   struct DATA data;
-  char conv_field[SNP_MAX_FIELD];
   double d; /* temporary holder */
+  long long ll; /* temporary holder */
   int state;
   int i;
 
   data.length = (int)length - 1; /* leave room for '\0' */
-  data.holder = string;
+  data.string = string;
   data.pf = format;
   data.counter = 0;
 
@@ -691,11 +757,11 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
 
   for (; *data.pf && (data.counter < data.length); data.pf++) {
     if (*data.pf == '%') { /* we got a magic % cookie */
-      conv_flag((char *)0, &data); /* initialise format flags */
+      conv_flag(NULL, &data); /* initialise format flags */
       for (state = 1; *data.pf && state; ) {
         switch (*(++data.pf)) {
           case '\0': /* a NULL here ? ? bail out */
-            *data.holder = '\0';
+            *data.string = '\0';
             return data.counter;
 
           case 'f': /* float, double */
@@ -733,39 +799,39 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
             state = 0;
             break;
 
-          case 'u':
+          case 'u': /* unsigned decimal */
             STAR_ARGS(&data);
-            INPUT_NUMBER(&data, unsigned, d);
-            decimal(&data, d);
+            INPUT_NUMBER(&data, unsigned, ll);
+            decimal(&data, ll);
             state = 0;
             break;
 
           case 'i':
           case 'd': /* decimal */
             STAR_ARGS(&data);
-            INPUT_NUMBER(&data, signed, d);
-            decimal(&data, d);
+            INPUT_NUMBER(&data, signed, ll);
+            decimal(&data, ll);
             state = 0;
             break;
 
           case 'o': /* octal */
             STAR_ARGS(&data);
-            INPUT_NUMBER(&data, unsigned, d);
-            octal(&data, d);
+            INPUT_NUMBER(&data, unsigned, ll);
+            octal(&data, ll);
             state = 0;
             break;
 
           case 'x':
           case 'X': /* hexadecimal */
             STAR_ARGS(&data);
-            INPUT_NUMBER(&data, unsigned, d);
-            hexa(&data, d);
+            INPUT_NUMBER(&data, unsigned, ll);
+            hexa(&data, ll);
             state = 0;
             break;
 
           case 'c': /* character */
-            d = va_arg(args, int);
-            PUT_CHAR((char)d, &data);
+            ll = va_arg(args, int);
+            PUT_CHAR((char)ll, &data);
             state = 0;
             break;
 
@@ -775,17 +841,32 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
             state = 0;
             break;
 
+          case 'p': /* pointer */
+            data.is_square = 1;
+            ll = (long long)va_arg(args, void *);
+            ll == 0 ? strings(&data, "(nil)") : hexa(&data, ll);
+            state = 0;
+            break;
+
           case 'n':
             *(va_arg(args, int *)) = data.counter; /* what's the count ? */
             state = 0;
             break;
 
           case 'l':
-            data.a_long = (data.a_long == SNP_LEN_LONG) ? SNP_LEN_LONG_LONG : SNP_LEN_LONG;
+            if (data.a_long == INT_LEN_LONG) {
+              data.a_long = INT_LEN_LONG_LONG;
+            } else {
+              data.a_long = INT_LEN_LONG;
+            }
             break;
 
           case 'h':
-            data.a_long = (data.a_long == SNP_LEN_SHORT) ? SNP_LEN_CHAR : SNP_LEN_SHORT;
+            if (data.a_long == INT_LEN_SHORT) {
+              data.a_long = INT_LEN_CHAR;
+            } else {
+              data.a_long = INT_LEN_SHORT;
+            }
             break;
 
           case '%': /* nothing just % */
@@ -808,17 +889,16 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
           case '6':
           case '7':
           case '8':
-          case '9':
+          case '9': {
+            char conv_flags[0x10] = {0, };
             /* initialize width and precision */
-            for (i = 0; isflag(*data.pf); i++, data.pf++) {
-              if (i < SNP_MAX_FIELD - 1) {
-                conv_field[i] = *data.pf;
-              }
+            for (i = 0; i < (int)sizeof(conv_flags) - 1 && IS_CONV_FLAG(*data.pf); i++, data.pf++) {
+              conv_flags[i] = *data.pf;
             }
-            conv_field[i] = '\0';
-            conv_flag(conv_field, &data);
+            conv_flag(conv_flags, &data);
             data.pf--; /* went to far go back */
             break;
+          }
 
           default:
             /* is this an error ? maybe bail out */
@@ -831,7 +911,7 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
     }
   }
 
-  *data.holder = '\0'; /* the end ye ! */
+  *data.string = '\0'; /* the end ye ! */
 
   return data.counter;
 }
@@ -846,3 +926,8 @@ int snprintf(char *string, size_t length, const char *format, ...) {
 
   return rval;
 }
+
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
