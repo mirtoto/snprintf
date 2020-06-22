@@ -1,99 +1,92 @@
 // Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
 
-/*
- 
-Unix snprintf implementation.
-Version 2.0
-   
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+/**
+ * Unix snprintf() implementation.
+ * @version 2.2
+ *  
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * 
+ * Revision History:
+ * 
+ * @version 2.2
+ * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - fix precision for integers
+ *  - remove global buffers and unnecessary copying & lookin through srings
+ *  - cleanup code and add Doxygen style comments
+ * 
+ * @version 2.1
+ * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - fix problem with very big and very low "long long" values
+ *  - change exponent width from 3 to 2
+ *  - fix zero value for floating
+ *  - support for "p" (%p)
+ *
+ * @version 2.0
+ * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - move all defines & macros from header to codefile
+ *  - support for "long long" (%llu, %lld, %llo, %llx)
+ *  - fix for interpreting precision in some situations
+ *  - fix unsigned (%u) for negative input
+ *  - fix h & hh length of input number specifier
+ *  - fix Clang linter warnings
+ *
+ * @version 1.1
+ * @author Alain Magloire, alainm@rcsm.ee.mcgill.ca
+ *  - added changes from Miles Bader
+ *  - corrected a bug with %f
+ *  - added support for %#g
+ *  - added more comments :-)
+ *
+ * @version 1.0
+ * @author Alain Magloire, alainm@rcsm.ee.mcgill.ca
+ *  - supporting must ANSI syntaxic_sugars (see below)
+ *
+ * @version 0.0
+ * @author Alain Magloire, alainm@rcsm.ee.mcgill.ca
+ *  - suppot %s %c %d
+ *
+ * For the floating point format the challenge was finding a way to
+ * manipulate the Real numbers without having to resort to mathematical
+ * function (it would require to link with -lm) and not going down
+ * to the bit pattern (not portable).
+ *
+ * So a number, a real is:
+ *
+ *    real = integral + fraction
+ *
+ *    integral = ... + a(2)*10^2 + a(1)*10^1 + a(0)*10^0
+ *    fraction = b(1)*10^-1 + b(2)*10^-2 + ...
+ *
+ *    where:
+ *      0 <= a(i) => 9
+ *      0 <= b(i) => 9
+ *
+ *   from then it was simple math
+ *
+ * THANKS (for the patches and ideas):
+ *  - Miles Bader
+ *  - Cyrille Rustom
+ *  - Jacek Slabocewiz
+ *  - Mike Parker (mouse)
+ */
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
-Revision History:
-2.1: by Miroslaw Toton (mirtoto)
-   * fix problem with very big and very low "long long" values
-   * change exponent width from 3 to 2
-   * fix zero value for floating
-   * support for "p" (%p)
-
-2.0: by Miroslaw Toton (mirtoto)
-   * move all defines & macros from header to codefile
-   * support for "long long" (%llu, %lld, %llo, %llx)
-   * fix for interpreting precision in some situations
-   * fix unsigned (%u) for negative input
-   * fix h & hh length of input number specifier
-   * fix Clang linter warnings
-
-1.1:
-   * added changes from Miles Bader
-   * corrected a bug with %f
-   * added support for %#g
-   * added more comments :-)
-
-1.0:
-   * supporting must ANSI syntaxic_sugars(see below)
-
-0.0:
-   * suppot %s %c %d
-
-It understands:
-   * Integer:
-     %hu %llu %lu %u     unsigned
-     %hd %lld %ld %d     decimal
-     %ho %llo %lo %o     octal
-     %hx %llx %lx %x %X  hexa
-   * Floating points:
-     %g %G %e %E %f      double
-   * Strings:
-     %s                  string
-     %c                  character
-     %%                  %
-   * Other:
-     %p                  pointer
-
- Formating conversion flags:
-    - align left
-    + Justify right or put a plus if number
-    # prefix 0x, 0X for hexa and 0 for octal
-    * precision/witdth is specify as an (int) in the arguments
-  ' ' leave a blank for number with no sign
-    l the later should be a long
-   ll the later should be a long long
-    h the later should be a short
-   hh the later should be a char
-
-Format:
-  snprintf(string, sizeof_string, format, ...)
-
-Return values:
-  (sizeof_string - 1)
-
-
- THANKS(for the patches and ideas):
-     Miles Bader
-     Cyrille Rustom
-     Jacek Slabocewiz
-     Mike Parker(mouse)
-
-Alain Magloire: alainm@rcsm.ee.mcgill.ca
-
-*/
-
-#include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
 
 #include "snprintf.h"
+
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -101,103 +94,90 @@ Alain Magloire: alainm@rcsm.ee.mcgill.ca
 #endif
 
 
-/*
- * For the FLOATING POINT FORMAT :
- *  the challenge was finding a way to
- *  manipulate the Real numbers without having
- *  to resort to mathematical function (it
- *  would require to link with -lm) and not
- *  going down to the bit pattern (not portable)
- *
- *  so a number, a real is:
-
-      real = integral + fraction
-
-      integral = ... + a(2)*10^2 + a(1)*10^1 + a(0)*10^0
-      fraction = b(1)*10^-1 + b(2)*10^-2 + ...
-
-      where:
-       0 <= a(i) => 9
-       0 <= b(i) => 9
-
-    from then it was simple math
+/** 
+ * This struct holds temporary data during processing @p format 
+ * of vsnprintf()/snprintf() functions.
  */
-
-/* this struct holds everything we need */
 struct DATA {
-  int length;
-  int counter;
-  char *string;
-  const char *pf;
+  size_t counter;             /**< counter of length of string in DATA::ps */
+  size_t ps_size;             /**< size of DATA::ps - 1 */
+  char *ps;                   /**< pointer to output string */
+  const char *pf;             /**< pointer to input format string */
 
-#define WIDTH_NOT_FOUND       -1
+/** Value of DATA::width - undefined width of field. */
+#define WIDTH_UNSET          -1
 
-  int width;
+  int width;                  /**< width of field */
 
-#define PRECISION_NOT_FOUND   -1
+/** Value of DATA::precision - undefined precision of field. */
+#define PRECISION_UNSET      -1
 
   int precision;
 
-#define ALIGN_DEFAULT         0
+/** Value of DATA::align - undefined align of field. */
+#define ALIGN_UNSET           0
+/** Value of DATA::align - align right of field. */
 #define ALIGN_RIGHT           1
+/** Value of DATA::align - align left of field. */
 #define ALIGN_LEFT            2
 
-  unsigned int align:2;
-  unsigned int is_square:1;
-  unsigned int is_space:1;
-  unsigned int is_dot:1;
-  unsigned int is_star_w:1;
-  unsigned int is_star_p:1;
+  unsigned int align:2;     /**< align of field */
+  unsigned int is_square:1; /**< is field with hash flag? */
+  unsigned int is_space:1;  /**< is field with space flag? */
+  unsigned int is_dot:1;    /**< is field with dot flag? */
+  unsigned int is_star_w:1; /**< is field with width defined? */
+  unsigned int is_star_p:1; /**< is field with precision defined? */
 
+/** Value of DATA::a_long - "int" type of input argument. */
 #define INT_LEN_DEFAULT       0
+/** Value of DATA::a_long - "long" type of input argument. */
 #define INT_LEN_LONG          1
+/** Value of DATA::a_long - "long long" of input type argument. */
 #define INT_LEN_LONG_LONG     2
+/** Value of DATA::a_long - "short" type of input argument. */
 #define INT_LEN_SHORT         3
+/** Value of DATA::a_long - "char" type of input argument. */
 #define INT_LEN_CHAR          4
 
-  unsigned int a_long:3;
+  unsigned int a_long:3;    /**< type of input */
 
-  unsigned int rfu:6;
+  unsigned int rfu:6;       /**< RFU */
 
-  char pad;
+  char pad;                 /**< padding character */
 
-  char slop[5];
+  char slop[5];             /**< RFU */
 };
 
-/* the conversion flags */
-#define IS_CONV_FLAG(c) (isdigit(c) ||                  \
-  (c) == '#' || (c) == ' ' ||                           \
-  (c) == '*' || (c) == '+' ||                           \
-  (c) == '-' || (c) == '.')
-
-/* round off to the precision */
-#define ROUND(d, p) \
+/** Round off to the precision. */
+#define ROUND_TO_PRECISION(d, p) \
   ((d < 0.) ? d - pow_10(-(p)->precision) * 0.5 : d + pow_10(-(p)->precision) * 0.5)
 
-/* set default precision */
-#define DEF_PREC(p)                                     \
-  if ((p)->precision == PRECISION_NOT_FOUND) {          \
+/** Set default precision if unset. */
+#define DEFAULT_PRECISION(p)                            \
+  if ((p)->precision == PRECISION_UNSET) {              \
     (p)->precision = 6;                                 \
   }
 
-/* put a char */
+/** Put a @p c character to output buffer if there is enough space. */
 #define PUT_CHAR(c, p)                                  \
-  if ((p)->counter < (p)->length) {                     \
-    *(p)->string++ = (c);                               \
+  if ((p)->counter < (p)->ps_size) {                    \
+    *(p)->ps++ = (c);                                   \
     (p)->counter++;                                     \
   }
 
+/** Put optionally '+' character to to output buffer if there is enough space. */
 #define PUT_PLUS(d, p)                                  \
   if ((d) > 0 && (p)->align == ALIGN_RIGHT) {           \
     PUT_CHAR('+', p);                                   \
   }
 
+/** Put optionally ' ' character to to output buffer if there is enough space. */
 #define PUT_SPACE(d, p)                                 \
   if ((p)->is_space && (d) > 0) {                       \
     PUT_CHAR(' ', p);                                   \
   }
 
-/* pad right */
+/** Padding right optionally. */
 #define PAD_RIGHT(p)                                    \
   if ((p)->width > 0 && (p)->align != ALIGN_LEFT) {     \
     for (; (p)->width > 0; (p)->width--) {              \
@@ -205,7 +185,7 @@ struct DATA {
     }                                                   \
   }
 
-/* pad left */
+/** Padding left optionally. */
 #define PAD_LEFT(p)                                     \
   if ((p)->width > 0 && (p)->align == ALIGN_LEFT) {     \
     for (; (p)->width > 0; (p)->width--) {              \
@@ -213,8 +193,8 @@ struct DATA {
     }                                                   \
   }
 
-/* if width and prec. in the args */
-#define STAR_ARGS(p)                                    \
+/** Get width and precision arguments if available. */
+#define WIDTH_AND_PRECISION_ARGS(p)                     \
   if ((p)->is_star_w) {                                 \
     (p)->width = va_arg(args, int);                     \
   }                                                     \
@@ -222,8 +202,9 @@ struct DATA {
     (p)->precision = va_arg(args, int);                 \
   }
 
-/* put number of given type to ll */
-#define INPUT_NUMBER(p, type, ll)                       \
+/** Get integer argument of given type and convert it to long long. */
+#define INTEGER_ARG(p, type, ll)                        \
+  WIDTH_AND_PRECISION_ARGS(p);                          \
   if ((p)->a_long == INT_LEN_LONG_LONG) {               \
     (ll) = (long long)va_arg(args, type long long);     \
   } else if ((p)->a_long == INT_LEN_LONG) {             \
@@ -239,49 +220,145 @@ struct DATA {
     }                                                   \
   }
 
-/* the floating point stuff */
-static double pow_10(int);
-static int log_10(double);
-static double integral(double, double *);
-static char *floattoa(double, int, int, char **);
-static char *inttoa(long long, int, int);
+/** Get double argument. */
+#define DOUBLE_ARG(p, d)                                \
+  WIDTH_AND_PRECISION_ARGS(p);                          \
+  (d) = va_arg(args, double);
 
-/* for the format */
-static void conv_flag(char *, struct DATA *);
-static void floating(struct DATA *, double);
-static void exponent(struct DATA *, double);
-static void decimal(struct DATA *, long long);
-static void octal(struct DATA *, long long);
-static void hexa(struct DATA *, long long);
-static void strings(struct DATA *, char *);
+/**
+ * Convert maximum @p n characters of @p a string to integer.
+ * 
+ * Function stop conversion and return result in any of the following cases:
+ *  - encounter end of string ('\0') character,
+ *  - encounter non digit character,
+ *  - reach @p n characters.
+ * 
+ * @return Integer (as type 'int') representation of @p a.
+ *
+static int antoi(const char *a, size_t n) {
+  size_t i = 0;
+  int res = 0;
 
-/*
- * Find the nth power of 10
- */
-static double pow_10(int n) {
-  int i;
-  double P;
-
-  if (n < 0) {
-    for (i = 1, P = 1., n = -n; i <= n; i++) {
-      P *= .1;
-    }
-  } else {
-    for (i = 1, P = 1.; i <= n; i++) {
-      P *= 10.0;
-    }
+  for (; a[i] != '\0' && i < n && isdigit(a[i]); i++) {
+    res = res * 10 + (a[i] - '0');
   }
 
-  return P;
+  return res;
+}
+ */
+
+/**
+ * Convert @p a string to @p res integer.
+ * 
+ * Function stop conversion and return result in any of the following cases:
+ *  - encounter end of string ('\0') character,
+ *  - encounter non digit character.
+ * 
+ * @param a Not NULL input string.
+ * @param res Not NULL pointer to output integer.
+ * 
+ * @return Number of parsed character form @p a.
+ */
+static int strtoi(const char *a, int *res) {
+  int i = 0;
+
+  *res = 0;
+
+  for (; a[i] != '\0' && isdigit(a[i]); i++) {
+    *res = *res * 10 + (a[i] - '0');
+  }
+
+  return i;
 }
 
-/*
- * Find the integral part of the log in base 10 
- * Note: this not a real log10()
-         I just need and approximation(integerpart) of x in:
-          10^x ~= r
- * log_10(200) = 2;
- * log_10(250) = 2;
+/**
+ * Convert @p number to string representation of given @p base.
+ *
+ * @param number Input number to conversion.
+ * @param is_signed Interpret @p number as 'unsigned' (0) / 'signed' (1).
+ * @param precision Input @p number precision.
+ * @param base Output base (8, 10, 16).
+ * @param output Buffer for output string.
+ * @param output_size Size of @p optput buffer (at least 3 characters).
+ */
+static void inttoa(long long number, int is_signed, int precision, int base,
+    char *output, size_t output_size) {    
+  size_t i = 0, j;
+
+  output_size--; /* for '\0' character */
+
+  if (number != 0) {
+    unsigned long long n;
+
+    if (is_signed && number < 0) {
+      n = (unsigned long long)-number;
+      output_size--; /* for '-' character */
+    } else {
+      n = (unsigned long long)number;
+    }
+
+    while (n != 0 && i < output_size) {
+      int r = (int)(n % (unsigned long long)(base));
+      output[i++] = (char)r + (r < 10 ? '0' : 'a' - 10);
+      n /= (unsigned long long)(base);
+    }
+
+    if (precision > 0) { /* precision defined ? */
+      for (; i < (size_t)precision && i < output_size; i++) {
+        output[i] = '0';
+      }
+    }
+
+    /* put the sign ? */
+    if (is_signed && number < 0) {
+      output[i++] = '-';
+    }
+
+    output[i] = '\0';
+    
+    /* reverse every thing */
+    for (i--, j = 0; j < i; j++, i--) {
+      char tmp = output[i];
+      output[i] = output[j];
+      output[j] = tmp;
+    }
+  } else {
+    precision = precision < 1 ? 1 : precision;
+    for (i = 0; i < (size_t)precision && i < output_size; i++) {
+      output[i] = '0';
+    }
+    output[i] = '\0';
+  }
+}
+
+/** Find the nth power of 10. */
+static double pow_10(int n) {
+  int i = 1;
+  double p = 1., m;
+
+  if (n < 0) {
+    n = -n;
+    m = .1;
+  } else {
+    m = 10.;
+  }
+
+  for (; i <= n; i++) {
+    p *= m;
+  }
+
+  return p;
+}
+
+/**
+ * Function find the integral part of the log in base 10.
+ * 
+ * @note This not a real log10().
+ *    I just need and approximation (integerpart) of x in:
+ *      10^x ~= r
+ *   
+ *    log_10(200) = 2;
+ *    log_10(250) = 2;
  */
 static int log_10(double r) {
   int i = 0;
@@ -289,42 +366,41 @@ static int log_10(double r) {
 
   if (r == 0.) {
     return 0;
-  } else if (r < 0.) {
+  }
+  
+  if (r < 0.) {
     r = -r;
   }
 
   if (r < 1.) {
-    while (result >= r) {
+    for (; result >= r; i++) {
       result *= .1;
-      i++;
     }
 
-    return (-i);
+    i = -i;
   } else {
-    while (result <= r) {
+    for (; result <= r; i++) {
       result *= 10.;
-      i++;
     }
 
-    return (i - 1);
+    --i;
   }
+
+  return i;
 }
 
-/*
- * This function return the fraction part of a double
- * and set in ip the integral part.
- * In many ways it resemble the modf() found on most Un*x
+/**
+ * Function return the fraction part of a @p real and set in @p ip the integral
+ * part. In many ways it resemble the modf() found on most Un*x.
  */
 static double integral(double real, double *ip) {
-  int j;
-  double i, s, p;
+  int log;
   double real_integral = 0.;
 
-  /* take care of the obvious */
   /* equal to zero ? */
   if (real == 0.) {
     *ip = 0.;
-    return (0.);
+    return 0.;
   }
 
   /* negative number ? */
@@ -335,78 +411,68 @@ static double integral(double real, double *ip) {
   /* a fraction ? */
   if (real < 1.) {
     *ip = 0.;
-
     return real;
   }
-  /* the real work :-) */
-  for (j = log_10(real); j >= 0; j--) {
-    p = pow_10(j);
-    s = (real - real_integral) / p;
-    i = 0.;
 
-    while (i + 1. <= s) {
-      i++;
-    }
+  /* the real work :-) */
+  for (log = log_10(real); log >= 0; log--) {
+    double i = 0., p = pow_10(log);
+    double s = (real - real_integral) / p;
+    for (; i + 1. <= s; i++) {}
     real_integral += i * p;
   }
-  *ip = real_integral;
 
+  *ip = real_integral;
   return (real - real_integral);
 }
 
-/* size of the buffer for the integral part */
+/** Maximum size of the buffer for the integral part. */
 #define MAX_INTEGRAL_SIZE (99 + 1)
-/* size of the buffer for the fraction part */
+/** Maximum size of the buffer for the fraction part. */
 #define MAX_FRACTION_SIZE (29 + 1)
-/* precision */
+/** Precision. */
 #define PRECISION (1.e-6)
 
-/* 
- * return an ascii representation of the integral part of the number
- * and set fract to be an ascii representation of the fraction part
- * the container for the fraction and the integral part or staticly
- * declare with fix size 
+/**
+ * Return an ASCII representation of the integral and fraction
+ * part of the @p number.
  */
-static char *floattoa(double number, int base, int precision, char **fract) {
-  int i, j, ch;
+static void floattoa(double number, int precision,
+    char *output_integral, size_t output_integral_size,
+    char *output_fraction, size_t output_fraction_size) {
+
+  size_t i, j;
+  int is_negative = 0;
   double ip, fp; /* integer and fraction part */
   double fraction;
-  int digits = MAX_INTEGRAL_SIZE - 1;
-  static char integral_part[MAX_INTEGRAL_SIZE];
-  static char fraction_part[MAX_FRACTION_SIZE];
-  double sign;
 
   /* taking care of the obvious case: 0.0 */
   if (number == 0.) {
-    memcpy(integral_part, "0", 2);
-    memcpy(fraction_part, "0", 2);
+    output_integral[0] = output_fraction[0] = '0';
+    output_integral[1] = output_fraction[1] = '\0';
 
-    if (fract != NULL) {
-      *fract = fraction_part;
-    }
-    
-    return integral_part;
+    return;
   }
 
   /* for negative numbers */
-  if ((sign = number) < 0.) {
+  if (number < 0.) {
     number = -number;
-    digits--; /* sign consume one digit */
+    is_negative = 1;
+    output_integral_size--; /* sign consume one digit */
   }
 
   fraction = integral(number, &ip);
   number = ip;
   /* do the integral part */
   if (ip == 0.) {
-    integral_part[0] = '0';
+    output_integral[0] = '0';
     i = 1;
   } else {
-    for (i = 0; i < digits && number != 0.; ++i) {
-      number /= base;
-      fp = integral(number, &ip);
-      ch = (int)((fp + PRECISION) * base); /* force to round */
-      integral_part[i] = (char)((ch <= 9) ? ch + '0' : ch + 'a' - 10);
-      if (!isxdigit(integral_part[i])) { /* bail out overflow !! */
+    for (i = 0; i < output_integral_size - 1 && number != 0.; ++i) {
+      number /= 10;
+      /* force to round */
+      output_integral[i] = (char)((integral(number, &ip) + PRECISION) * 10) + '0';
+      if (!isdigit(output_integral[i])) { /* bail out overflow !! */
         break;
       }
       number = ip;
@@ -415,152 +481,126 @@ static char *floattoa(double number, int base, int precision, char **fract) {
 
   /* Oh No !! out of bound, ho well fill it up ! */
   if (number != 0.) {
-    for (i = 0; i < digits; ++i) {
-      integral_part[i] = '9';
+    for (i = 0; i < output_integral_size - 1; ++i) {
+      output_integral[i] = '9';
     }
   }
 
   /* put the sign ? */
-  if (sign < 0.) {
-    integral_part[i++] = '-';
+  if (is_negative) {
+    output_integral[i++] = '-';
   }
 
-  integral_part[i] = '\0';
+  output_integral[i] = '\0';
 
   /* reverse every thing */
   for (i--, j = 0; j < i; j++, i--) {
-    char tmp = integral_part[i];
-    integral_part[i] = integral_part[j];
-    integral_part[j] = tmp;
+    char tmp = output_integral[i];
+    output_integral[i] = output_integral[j];
+    output_integral[j] = tmp;
   }
 
-  /* the fractionnal part */
-  for (i = 0, fp = fraction; precision > 0 && i < MAX_FRACTION_SIZE; i++, precision--) {
-    fraction_part[i] = (char)(int)((fp + PRECISION) * 10. + '0');
-    if (!isdigit(fraction_part[i])) { /* underflow ? */
+  /* the fractional part */
+  for (i = 0, fp = fraction; precision > 0 && i < output_fraction_size - 1; i++, precision--) {
+    output_fraction[i] = (char)(int)((fp + PRECISION) * 10. + '0');
+    if (!isdigit(output_fraction[i])) { /* underflow ? */
       break;
     }
+
     fp = (fp * 10.0) - (double)(long)((fp + PRECISION) * 10.);
   }
-  fraction_part[i] = '\0';
-
-  if (fract != NULL) {
-    *fract = fraction_part;
-  }
-
-  return integral_part;
+  output_fraction[i] = '\0';
 }
 
-// is_signed == 0 - interpret 'number' as unsigned
-// is_signed == 1 - interpret 'number' as signed
-static char *inttoa(long long number, int is_signed, int base) {    
-  static char integral_part[MAX_INTEGRAL_SIZE];
-  int i = 0, j; 
+/** Format @p ll number as ASCII decimal string according to @p p flags. */
+static void decimal(struct DATA *p, long long ll) {
+  char number[MAX_INTEGRAL_SIZE], *pnumber = number;
+  inttoa(ll, *p->pf == 'i' || *p->pf == 'd', p->precision, 10,
+    number, sizeof(number));
 
-  if (number != 0) {
-    unsigned long long n;
-
-    if (is_signed && number < 0) {
-      n = (unsigned long long)-number;
-    } else {
-      n = (unsigned long long)number;
-    }
-
-    while (n != 0 && i < MAX_INTEGRAL_SIZE - 1) {
-      int r = (int)(n % (unsigned long long)(base));
-      integral_part[i++] = (char)r + (r < 10 ? '0' : 'a' - 10);
-      n /= (unsigned long long)(base);
-    }
-
-    /* put the sign ? */
-    if (is_signed && number < 0) {
-      integral_part[i++] = '-';
-    }
-
-    integral_part[i] = '\0';
-    
-    /* reverse every thing */
-    for (i--, j = 0; j < i; j++, i--) {
-      char tmp = integral_part[i];
-      integral_part[i] = integral_part[j];
-      integral_part[j] = tmp;
-    }
-  } else {
-    memcpy(integral_part, "0", 2);
-  }
-
-  return integral_part;
-}
-
-/* for %d and friends, it puts in string
- * the representation with the right padding
- */
-static void decimal(struct DATA *p, long long d) {
-  char *number = inttoa(d, *p->pf == 'i' || *p->pf == 'd', 10);
   p->width -= strlen(number);
+
   PAD_RIGHT(p);
-  PUT_PLUS(d, p);
-  PUT_SPACE(d, p);
-  while (*number != '\0') {
-    PUT_CHAR(*number, p);
-    number++;
+  PUT_PLUS(ll, p);
+  PUT_SPACE(ll, p);
+
+  for (; *pnumber != '\0'; pnumber++) {
+    PUT_CHAR(*pnumber, p);
   }
+
   PAD_LEFT(p);
 }
 
-/* for %o octal representation */
-static void octal(struct DATA *p, long long d) {
-  char *number = inttoa(d, 0, 8);
+/** Format @p ll number as ASCII octal string according to @p p flags. */
+static void octal(struct DATA *p, long long ll) {
+  char number[MAX_INTEGRAL_SIZE], *pnumber = number;
+  inttoa(ll, 0, p->precision, 8, number, sizeof(number));
+
   p->width -= strlen(number);
+
   PAD_RIGHT(p);
   if (p->is_square) { /* had prefix '0' for octal */
     PUT_CHAR('0', p);
   }
-  while (*number != '\0') {
-    PUT_CHAR(*number, p);
-    number++;
+
+  for (; *pnumber != '\0'; pnumber++) {
+    PUT_CHAR(*pnumber, p);
   }
+
   PAD_LEFT(p);
 }
 
-/* for %x %X hexadecimal representation */
-static void hexa(struct DATA *p, long long d) {
-  char *number = inttoa(d, 0, 16);
+/** Format @p ll number as ASCII hexadecimal string according to @p p flags. */
+static void hex(struct DATA *p, long long ll) {
+  char number[MAX_INTEGRAL_SIZE], *pnumber = number;
+  inttoa(ll, 0, p->precision, 16, number, sizeof(number));
+
   p->width -= strlen(number);
+
   PAD_RIGHT(p);
-  if (p->is_square) { /* prefix '0x' for hexa */
+  if (p->is_square) { /* prefix '0x' for hex */
     PUT_CHAR('0', p);
     PUT_CHAR(*p->pf == 'p' ? 'x' : *p->pf, p);
   }
-  while (*number != '\0') {
-    PUT_CHAR((*p->pf == 'X' ? (char)toupper(*number) : *number), p);
-    number++;
+
+  for (; *pnumber != '\0'; pnumber++) {
+    PUT_CHAR((*p->pf == 'X' ? (char)toupper(*pnumber) : *pnumber), p);
   }
+
   PAD_LEFT(p);
 }
 
-/* %s strings */
-static void strings(struct DATA *p, char *str) {
-  int len = (int)strlen(str);
-  if (p->precision != PRECISION_NOT_FOUND && len > p->precision) { /* the smallest number */
+/** Format @p str string according to @p p flags. */
+static void strings(struct DATA *p, char *s) {
+  int len = (int)strlen(s);
+  if (p->precision != PRECISION_UNSET && len > p->precision) { /* the smallest number */
     len = p->precision;
   }
+
   p->width -= len;
+
   PAD_RIGHT(p);
-  while (len-- > 0) { /* put the sting */
-    PUT_CHAR(*str, p);
-    str++;
+
+  for (; len-- > 0; s++) {
+    PUT_CHAR(*s, p);
   }
+
   PAD_LEFT(p);
 }
 
-/* %f or %g  floating point representation */
+/** 
+ * Format @p d floating point number as ASCII decimal floating point 
+ * according to @p p flags.
+ */
 static void floating(struct DATA *p, double d) {
-  char *integral, *fraction;
+  char integral[MAX_INTEGRAL_SIZE], *pintegral = integral;
+  char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
 
-  DEF_PREC(p);
-  d = ROUND(d, p);
-  integral = floattoa(d, 10, p->precision, &fraction);
+  DEFAULT_PRECISION(p);
+  d = ROUND_TO_PRECISION(d, p);
+  floattoa(d, p->precision,
+    integral, sizeof(integral), fraction, sizeof(fraction));
+    
   /* calculate the padding. 1 for the dot */
   if (d > 0. && p->align == ALIGN_RIGHT) {
     p->width -= 1;  
@@ -569,39 +609,50 @@ static void floating(struct DATA *p, double d) {
   if (p->precision == 0) {
     p->width += 1;
   }
+  
   PAD_RIGHT(p);
   PUT_PLUS(d, p);
   PUT_SPACE(d, p);
-  while (*integral != '\0') { /* the integral */
-    PUT_CHAR(*integral, p);
-    integral++;
+
+  for (; *pintegral != '\0'; pintegral++) {
+    PUT_CHAR(*pintegral, p);
   }
-  if (p->precision != 0 || p->is_square) {
-    PUT_CHAR('.', p);                 /* put the '.' */
+
+  if (p->precision != 0 || p->is_square) { /* put the '.' */
+    PUT_CHAR('.', p);
   }
+
   if (*p->pf == 'g' || *p->pf == 'G') { /* smash the trailing zeros */
-    int i;
-    for (i = (int)strlen(fraction) - 1; i >= 0 && fraction[i] == '0'; i--) {
-      fraction[i] = '\0';
+    size_t i;
+    for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
+      fraction[i - 1] = '\0';
     }
   }
-  for (; *fraction != '\0'; fraction++) {
-    PUT_CHAR(*fraction, p); /* the fraction */
+
+  for (; *pfraction != '\0'; pfraction++) {
+    PUT_CHAR(*pfraction, p);
   }
 
   PAD_LEFT(p);
 }
 
-/* %e %E %g exponent representation */
+/** 
+ * Format @p d floating point number as ASCII scientific (exponential)
+ * floating point according to @p p flags.
+ */
 static void exponent(struct DATA *p, double d) {
-  char *integral, *fraction, *exponent;
-  int j, i;
+  char integral[MAX_INTEGRAL_SIZE], *pintegral = integral;
+  char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
+  int log;
 
-  DEF_PREC(p);
-  j = log_10(d);
-  d = d / pow_10(j); /* get the Mantissa */
-  d = ROUND(d, p);
-  integral = floattoa(d, 10, p->precision, &fraction);
+  DEFAULT_PRECISION(p);
+
+  log = log_10(d);
+  d /= pow_10(log); /* get the Mantissa */
+  d = ROUND_TO_PRECISION(d, p);
+
+  floattoa(d, p->precision,
+    integral, sizeof(integral), fraction, sizeof(fraction));
   /* 1 for unit, 1 for the '.', 1 for 'e|E',
    * 1 for '+|-', 3 for 'exp' */
   /* calculate how much padding need */
@@ -609,23 +660,27 @@ static void exponent(struct DATA *p, double d) {
     p->width -= 1;  
   }
   p->width -= p->is_space + p->precision + 7;
+  
   PAD_RIGHT(p);
   PUT_PLUS(d, p);
   PUT_SPACE(d, p);
-  while (*integral != '\0') { /* the integral */
-    PUT_CHAR(*integral, p);
-    integral++;
+
+  for (; *pintegral != '\0'; pintegral++) {
+    PUT_CHAR(*pintegral, p);
   }
-  if (p->precision != 0 || p->is_square) {
-    PUT_CHAR('.', p);                 /* the '.' */
+
+  if (p->precision != 0 || p->is_square) { /* the '.' */
+    PUT_CHAR('.', p);
   }
+
   if (*p->pf == 'g' || *p->pf == 'G') { /* smash the trailing zeros */
-    for (i = (int)strlen(fraction) - 1; i >= 0 && fraction[i] == '0'; i--) {
-      fraction[i] = '\0';
+    size_t i;
+    for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
+      fraction[i - 1] = '\0';
     }
   }
-  for (; *fraction != '\0'; fraction++) {
-    PUT_CHAR(*fraction, p); /* the fraction */
+  for (; *pfraction != '\0'; pfraction++) {
+    PUT_CHAR(*pfraction, p);
   }
 
   if (*p->pf == 'g' || *p->pf == 'e') { /* the exponent put the 'e|E' */
@@ -633,36 +688,32 @@ static void exponent(struct DATA *p, double d) {
   } else {
     PUT_CHAR('E', p);
   }
-  if (j >= 0) { /* the sign of the exp */
+
+  if (log >= 0) { /* the sign of the exp */
     PUT_CHAR('+', p);
-  } else {
-    PUT_CHAR('-', p);
-    j = -j;
   }
-  exponent = inttoa(j, 0, 10);
-  if (j <= 9) { /* need to pad the exponent with 0 */
-    PUT_CHAR('0', p);
+
+  inttoa(log, 1, 2, 10, integral, sizeof(integral));
+  for (pintegral = integral; *pintegral != '\0'; pintegral++) { /* exponent */
+    PUT_CHAR(*pintegral, p);
   }
-  while (*exponent != '\0') { /* the exponent */
-    PUT_CHAR(*exponent, p);
-    exponent++;
-  }
+
   PAD_LEFT(p);
 }
 
-/* initialize the conversion specifiers */
-static void conv_flag(char *s, struct DATA *p) {
-  p->width = WIDTH_NOT_FOUND;
-  p->precision = PRECISION_NOT_FOUND;
+/** Initialize and parse the conversion specifiers. */
+static void conv_flags(struct DATA *p) {
+  p->width = WIDTH_UNSET;
+  p->precision = PRECISION_UNSET;
   p->is_star_w = p->is_star_p = 0;
   p->is_square = p->is_space = 0;
   p->a_long = INT_LEN_DEFAULT;
-  p->align = ALIGN_DEFAULT;
+  p->align = ALIGN_UNSET;
   p->pad = ' ';
   p->is_dot = 0;
 
-  for (; s && *s != '\0'; s++) {
-    switch (*s) {
+  for (; p != NULL && p->pf != NULL; p->pf++) {
+    switch (*p->pf) {
       case ' ':
         p->is_space = 1;
         break;
@@ -672,7 +723,7 @@ static void conv_flag(char *s, struct DATA *p) {
         break;
 
       case '*':
-        if (p->width == WIDTH_NOT_FOUND) {
+        if (p->width == WIDTH_UNSET) {
           p->width = 1;
           p->is_star_w = 1;
         } else {
@@ -690,7 +741,7 @@ static void conv_flag(char *s, struct DATA *p) {
         break;
 
       case '.':
-        if (p->width == WIDTH_NOT_FOUND) {
+        if (p->width == WIDTH_UNSET) {
           p->width = 0;
         }
         p->is_dot = 1;
@@ -700,9 +751,7 @@ static void conv_flag(char *s, struct DATA *p) {
         p->pad = '0';
         if (p->is_dot) {
           p->precision = 0;
-          break;
         }
-        p->pad = '0';
         break;
 
       case '1':
@@ -713,27 +762,17 @@ static void conv_flag(char *s, struct DATA *p) {
       case '6':
       case '7':
       case '8':
-      case '9': { /* gob all the digits */
-        char number[0x10] = {0, };
-        int i;
-
-        for (i = 0; i < (int)sizeof(number) - 1 && isdigit(*s); i++, s++) {
-          number[i] = *s;
-        }
-
-        if (p->width == WIDTH_NOT_FOUND) {
-          p->width = atoi(number);
-        } else {
-          p->precision = atoi(number);
-        }
-
-        s--; /* went to far go back */
-
+      case '9': /* get all the digits */
+        p->pf += strtoi(p->pf,
+          p->width == WIDTH_UNSET ? &p->width : &p->precision) - 1;
         break;
-      }
+
+      case '%':
+        return;
 
       default:
-        break;
+        p->pf--; /* went to far go back */
+        return;
     }
   }
 }
@@ -743,100 +782,92 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
   double d; /* temporary holder */
   long long ll; /* temporary holder */
   int state;
-  int i;
-
-  data.length = (int)length - 1; /* leave room for '\0' */
-  data.string = string;
-  data.pf = format;
-  data.counter = 0;
 
   /* sanity check, the string must be > 1 */
-  if (length < 1) {
+  if (string == NULL || length < 1) {
     return -1;
   }
 
-  for (; *data.pf && (data.counter < data.length); data.pf++) {
+  data.ps_size = length - 1; /* leave room for '\0' */
+  data.ps = string;
+  data.pf = format;
+  data.counter = 0;
+
+  for (; *data.pf && (data.counter < data.ps_size); data.pf++) {
     if (*data.pf == '%') { /* we got a magic % cookie */
-      conv_flag(NULL, &data); /* initialise format flags */
+      conv_flags(&data); /* initialise format flags */
       for (state = 1; *data.pf && state; ) {
         switch (*(++data.pf)) {
           case '\0': /* a NULL here ? ? bail out */
-            *data.string = '\0';
-            return data.counter;
+            *data.ps = '\0';
+            return (int)data.counter;
 
-          case 'f': /* float, double */
-          case 'F':
-            STAR_ARGS(&data);
-            d = va_arg(args, double);
+          case 'f':
+          case 'F': /* decimal floating point */
+            DOUBLE_ARG(&data, d);
             floating(&data, d);
             state = 0;
             break;
 
+          case 'e':
+          case 'E': /* scientific (exponential) floating point */
+            DOUBLE_ARG(&data, d);
+            exponent(&data, d);
+            state = 0;
+            break;
+
           case 'g':
-          case 'G':
-            STAR_ARGS(&data);
-            DEF_PREC(&data);
-            d = va_arg(args, double);
-            i = log_10(d);
-            /*
-             * for '%g|%G' ANSI: use f if exponent
-             * is in the range or [-4,p] exclusively
-             * else use %e|%E
-             */
-            if (-4 < i && i < data.precision) {
+          case 'G': { /* scientific or decimal floating point */
+            int log;
+            DOUBLE_ARG(&data, d);
+            DEFAULT_PRECISION(&data);
+            log = log_10(d);
+            /* use decimal floating point (%f / %F) if exponent is in the range
+               [-4,precision] exclusively else use scientific floating
+               point (%e / %E) */
+            if (-4 < log && log < data.precision) {
               floating(&data, d);
             } else {
               exponent(&data, d);
             }
             state = 0;
             break;
+          }
 
-          case 'e':
-          case 'E': /* Exponent double */
-            STAR_ARGS(&data);
-            d = va_arg(args, double);
-            exponent(&data, d);
-            state = 0;
-            break;
-
-          case 'u': /* unsigned decimal */
-            STAR_ARGS(&data);
-            INPUT_NUMBER(&data, unsigned, ll);
+          case 'u': /* unsigned decimal integer */
+            INTEGER_ARG(&data, unsigned, ll);
             decimal(&data, ll);
             state = 0;
             break;
 
           case 'i':
-          case 'd': /* decimal */
-            STAR_ARGS(&data);
-            INPUT_NUMBER(&data, signed, ll);
+          case 'd': /* signed decimal integer */
+            INTEGER_ARG(&data, signed, ll);
             decimal(&data, ll);
             state = 0;
             break;
 
-          case 'o': /* octal */
-            STAR_ARGS(&data);
-            INPUT_NUMBER(&data, unsigned, ll);
+          case 'o': /* octal (always unsigned) */
+            INTEGER_ARG(&data, unsigned, ll);
             octal(&data, ll);
             state = 0;
             break;
 
           case 'x':
-          case 'X': /* hexadecimal */
-            STAR_ARGS(&data);
-            INPUT_NUMBER(&data, unsigned, ll);
-            hexa(&data, ll);
+          case 'X': /* hexadecimal (always unsigned) */
+            INTEGER_ARG(&data, unsigned, ll);
+            hex(&data, ll);
             state = 0;
             break;
 
-          case 'c': /* character */
+          case 'c': /* single character */
             ll = va_arg(args, int);
             PUT_CHAR((char)ll, &data);
             state = 0;
             break;
 
-          case 's': /* string */
-            STAR_ARGS(&data);
+          case 's': /* string of characters */
+            WIDTH_AND_PRECISION_ARGS(&data);
             strings(&data, va_arg(args, char *));
             state = 0;
             break;
@@ -844,16 +875,16 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
           case 'p': /* pointer */
             data.is_square = 1;
             ll = (long long)va_arg(args, void *);
-            ll == 0 ? strings(&data, "(nil)") : hexa(&data, ll);
+            ll == 0 ? strings(&data, "(nil)") : hex(&data, ll);
             state = 0;
             break;
 
-          case 'n':
-            *(va_arg(args, int *)) = data.counter; /* what's the count ? */
+          case 'n': /* what's the count ? */
+            *(va_arg(args, int *)) = (int)data.counter;
             state = 0;
             break;
 
-          case 'l':
+          case 'l': /* long or long long */
             if (data.a_long == INT_LEN_LONG) {
               data.a_long = INT_LEN_LONG_LONG;
             } else {
@@ -861,7 +892,7 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
             }
             break;
 
-          case 'h':
+          case 'h': /* short or char */
             if (data.a_long == INT_LEN_SHORT) {
               data.a_long = INT_LEN_CHAR;
             } else {
@@ -889,16 +920,9 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
           case '6':
           case '7':
           case '8':
-          case '9': {
-            char conv_flags[0x10] = {0, };
-            /* initialize width and precision */
-            for (i = 0; i < (int)sizeof(conv_flags) - 1 && IS_CONV_FLAG(*data.pf); i++, data.pf++) {
-              conv_flags[i] = *data.pf;
-            }
-            conv_flag(conv_flags, &data);
-            data.pf--; /* went to far go back */
+          case '9':
+            conv_flags(&data);
             break;
-          }
 
           default:
             /* is this an error ? maybe bail out */
@@ -911,9 +935,9 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
     }
   }
 
-  *data.string = '\0'; /* the end ye ! */
+  *data.ps = '\0'; /* the end ye ! */
 
-  return data.counter;
+  return (int)data.counter;
 }
 
 int snprintf(char *string, size_t length, const char *format, ...) {

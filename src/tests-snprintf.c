@@ -133,6 +133,11 @@ MU_TEST(test_int_dec_width_2) {
 	TEST(3, "123", ret);
 }
 
+MU_TEST(test_int_dec_width_20_precision_10) {
+	int ret = snprintf(msg, sizeof(msg), "%20.10d", 123);
+	TEST(20, "          0000000123", ret);
+}
+
 MU_TEST(test_int_dec_width_as_parameter) {
 	int ret = snprintf(msg, sizeof(msg), "%*d", 5, 123);
 	TEST(5, "  123", ret);
@@ -291,6 +296,11 @@ MU_TEST(test_string) {
 	TEST(5, "Hello", ret);
 }
 
+MU_TEST(test_string_empty) {
+	int ret = snprintf(msg, sizeof(msg), "%s", "");
+	TEST(0, "", ret);
+}
+
 MU_TEST(test_string_width_20) {
 	int ret = snprintf(msg, sizeof(msg), "%20s", "Hello");
 	TEST(20, "               Hello", ret);
@@ -311,9 +321,35 @@ MU_TEST(test_string_width_20_precision_20) {
 	TEST(20, "               Hello", ret);
 }
 
-MU_TEST(test_string_empty) {
-	int ret = snprintf(msg, sizeof(msg), "%s", "");
-	TEST(0, "", ret);
+MU_TEST(test_string_with_less_than_input) {
+	int ret = snprintf(msg, sizeof(msg), "%3s", "Hello");
+	TEST(5, "Hello", ret);
+}
+
+MU_TEST(test_string_with_less_than_input_precision_equal_width) {
+	int ret = snprintf(msg, sizeof(msg), "%3.3s", "Hello");
+	TEST(3, "Hel", ret);
+}
+
+MU_TEST(test_string_width_as_parameter) {
+	int ret = snprintf(msg, sizeof(msg), "%-*.s%*.s!", 10, "Hello", 10, "World");
+	TEST(21, "Hello          World!", ret);
+}
+
+MU_TEST(test_string_precision_as_parameter) {
+	int ret = snprintf(msg, sizeof(msg), "%-.*s%.*s!", 10, "Hello", 10, "World");
+	TEST(11, "HelloWorld!", ret);
+}
+
+MU_TEST(test_string_width_and_precision_as_parameter) {
+	int ret = snprintf(msg, sizeof(msg), "%-*.*s%*.*s!",
+		10, 10, "Hello", 10, 10, "World");
+	TEST(21, "Hello          World!", ret);
+}
+
+MU_TEST(test_string_width_as_parameter_negative) {
+	int ret = snprintf(msg, sizeof(msg), "%*s", -20, "Hello World!");
+	TEST(12, "Hello World!", ret);
 }
 
 MU_TEST(test_string_too_long) {
@@ -379,6 +415,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_int_dec_width_31_and_0_padded);
 	MU_RUN_TEST(test_int_dec_width_31_and_align_left);
 	MU_RUN_TEST(test_int_dec_width_2);
+	MU_RUN_TEST(test_int_dec_width_20_precision_10);
 	MU_RUN_TEST(test_int_dec_width_as_parameter);
 	MU_RUN_TEST(test_int_dec_random);
 
@@ -416,6 +453,12 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_string_width_20_and_align_left);
 	MU_RUN_TEST(test_string_width_20_precision_2);
 	MU_RUN_TEST(test_string_width_20_precision_20);
+	MU_RUN_TEST(test_string_with_less_than_input);
+	MU_RUN_TEST(test_string_with_less_than_input_precision_equal_width);
+	MU_RUN_TEST(test_string_width_as_parameter);
+	MU_RUN_TEST(test_string_precision_as_parameter);
+	MU_RUN_TEST(test_string_width_and_precision_as_parameter);
+	MU_RUN_TEST(test_string_width_as_parameter_negative);
 	MU_RUN_TEST(test_string_too_long);
 
 	MU_RUN_TEST(test_strings);
