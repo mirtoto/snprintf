@@ -32,7 +32,26 @@ static char msg[32] = {0, };
 #pragma GCC diagnostic push
 // We're testing that truncation works properly, so temporarily disable the warning.
 #pragma GCC diagnostic ignored "-Wformat-truncation"
+#pragma GCC diagnostic ignored "-Wformat="
 #endif
+
+MU_TEST(test_buffer_null) {
+	int ret = 0;
+	for (char *pmsg = NULL;;) {
+		ret = snprintf(pmsg, (size_t)ret,
+			"%s %s%c : %d", "Hello", "World", '!', 2020);
+		mu_check(ret == 19);
+		if (pmsg != NULL) {
+			strncpy(msg, pmsg, sizeof(msg));
+			free(pmsg);
+			break;
+		} else if (ret > 0) {
+			// allocate buffer for output string (+1 because of '\0')
+			pmsg = malloc((size_t)++ret);
+		}
+	}
+	TEST(19, "Hello World! : 2020", ret);
+}
 
 MU_TEST(test_buffer_length_0) {
 	int ret = snprintf(msg, 0, "%d", 123);
@@ -53,6 +72,26 @@ MU_TEST(test_buffer_length_3) {
 	int ret = snprintf(msg, 3, "%d", 123);
 	TEST(2, "12", ret);
 }
+
+#ifdef __clang__
+#pragma clang diagnostic push
+// We're testing that wrong format works properly, so temporarily disable the warning.
+#pragma clang diagnostic ignored "-Wformat"
+#endif
+
+MU_TEST(test_wrong_format_no_type) {
+	int ret = snprintf(msg, sizeof(msg), "%d%", 123);
+	TEST(4, "123%", ret);
+}
+
+MU_TEST(test_wrong_format_unsupported_type) {
+	int ret = snprintf(msg, sizeof(msg), "%d%v", 123);
+	TEST(4, "123%", ret);
+}
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #if __GNUC__ >= 7
 #pragma GCC diagnostic pop
@@ -138,6 +177,11 @@ MU_TEST(test_int_dec_width_20_precision_10) {
 	TEST(20, "          0000000123", ret);
 }
 
+MU_TEST(test_int_dec_precision_0) {
+	int ret = snprintf(msg, sizeof(msg), "%.0d %.0d", 123, 0);
+	TEST(4, "123 ", ret);
+}
+
 MU_TEST(test_int_dec_width_as_parameter) {
 	int ret = snprintf(msg, sizeof(msg), "%*d", 5, 123);
 	TEST(5, "  123", ret);
@@ -166,6 +210,11 @@ MU_TEST(test_int_hex_negative) {
 	int x = -123;
 	int ret = snprintf(msg, sizeof(msg), "%x", x);
 	TEST(sizeof(x) * 2, expected + strlen(expected) - sizeof(x) * 2, ret);
+}
+
+MU_TEST(test_int_hex_precision_0) {
+	int ret = snprintf(msg, sizeof(msg), "%#.0x %#.0x", 123, 0);
+	TEST(5, "0x7b ", ret);
 }
 
 MU_TEST(test_long_dec) {
@@ -395,10 +444,15 @@ MU_TEST(test_counters) {
 
 
 MU_TEST_SUITE(test_suite) {
+	MU_RUN_TEST(test_buffer_null);
+
 	MU_RUN_TEST(test_buffer_length_0);
 	MU_RUN_TEST(test_buffer_length_1);
 	MU_RUN_TEST(test_buffer_length_2);
 	MU_RUN_TEST(test_buffer_length_3);
+
+	MU_RUN_TEST(test_wrong_format_no_type);
+	MU_RUN_TEST(test_wrong_format_unsupported_type);
 
 	MU_RUN_TEST(test_char_dec);
 	MU_RUN_TEST(test_char_dec_min_and_max);
@@ -416,12 +470,14 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_int_dec_width_31_and_align_left);
 	MU_RUN_TEST(test_int_dec_width_2);
 	MU_RUN_TEST(test_int_dec_width_20_precision_10);
+	MU_RUN_TEST(test_int_dec_precision_0);
 	MU_RUN_TEST(test_int_dec_width_as_parameter);
 	MU_RUN_TEST(test_int_dec_random);
 
 	MU_RUN_TEST(test_int_hex);
 	MU_RUN_TEST(test_int_hex_uppercase);
 	MU_RUN_TEST(test_int_hex_negative);
+	MU_RUN_TEST(test_int_hex_precision_0);
 
 	MU_RUN_TEST(test_long_dec);
 	MU_RUN_TEST(test_long_hex);

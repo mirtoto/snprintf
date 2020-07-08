@@ -2,7 +2,7 @@
 
 /**
  * Unix snprintf() implementation.
- * @version 2.2
+ * @version 2.3
  *  
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,11 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  * 
  * Revision History:
+ * 
+ * @version 2.3
+ * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - support NULL as output buffer to calculate size of output string
+ *  - fix 0 precision for 0 value integers
  * 
  * @version 2.2
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
@@ -152,16 +157,12 @@ struct DATA {
 #define ROUND_TO_PRECISION(d, p) \
   ((d < 0.) ? d - pow_10(-(p)->precision) * 0.5 : d + pow_10(-(p)->precision) * 0.5)
 
-/** Set default precision if unset. */
-#define DEFAULT_PRECISION(p)                            \
-  if ((p)->precision == PRECISION_UNSET) {              \
-    (p)->precision = 6;                                 \
-  }
-
 /** Put a @p c character to output buffer if there is enough space. */
 #define PUT_CHAR(c, p)                                  \
   if ((p)->counter < (p)->ps_size) {                    \
-    *(p)->ps++ = (c);                                   \
+    if ((p)->ps != NULL) {                              \
+      *(p)->ps++ = (c);                                 \
+    }                                                   \
     (p)->counter++;                                     \
   }
 
@@ -206,24 +207,27 @@ struct DATA {
 #define INTEGER_ARG(p, type, ll)                        \
   WIDTH_AND_PRECISION_ARGS(p);                          \
   if ((p)->a_long == INT_LEN_LONG_LONG) {               \
-    (ll) = (long long)va_arg(args, type long long);     \
+    ll = (long long)va_arg(args, type long long);       \
   } else if ((p)->a_long == INT_LEN_LONG) {             \
-    (ll) = (long long)va_arg(args, type long);          \
+    ll = (long long)va_arg(args, type long);            \
   } else {                                              \
     type int a = va_arg(args, type int);                \
     if ((p)->a_long == INT_LEN_SHORT) {                 \
-      (ll) = (type short)a;                             \
+      ll = (type short)a;                               \
     } else if ((p)->a_long == INT_LEN_CHAR) {           \
-      (ll) = (type char)a;                              \
+      ll = (type char)a;                                \
     } else {                                            \
-      (ll) = a;                                         \
+      ll = a;                                           \
     }                                                   \
   }
 
 /** Get double argument. */
 #define DOUBLE_ARG(p, d)                                \
   WIDTH_AND_PRECISION_ARGS(p);                          \
-  (d) = va_arg(args, double);
+  if ((p)->precision == PRECISION_UNSET) {              \
+    (p)->precision = 6;                                 \
+  }                                                     \
+  d = va_arg(args, double);
 
 /**
  * Convert maximum @p n characters of @p a string to integer.
@@ -323,7 +327,7 @@ static void inttoa(long long number, int is_signed, int precision, int base,
       output[j] = tmp;
     }
   } else {
-    precision = precision < 1 ? 1 : precision;
+    precision = precision < 0 ? 1 : precision;
     for (i = 0; i < (size_t)precision && i < output_size; i++) {
       output[i] = '0';
     }
@@ -519,8 +523,8 @@ static void decimal(struct DATA *p, long long ll) {
     number, sizeof(number));
 
   p->width -= strlen(number);
-
   PAD_RIGHT(p);
+
   PUT_PLUS(ll, p);
   PUT_SPACE(ll, p);
 
@@ -537,9 +541,9 @@ static void octal(struct DATA *p, long long ll) {
   inttoa(ll, 0, p->precision, 8, number, sizeof(number));
 
   p->width -= strlen(number);
-
   PAD_RIGHT(p);
-  if (p->is_square) { /* had prefix '0' for octal */
+
+  if (p->is_square && *number != '\0') { /* prefix '0' for octal */
     PUT_CHAR('0', p);
   }
 
@@ -556,9 +560,9 @@ static void hex(struct DATA *p, long long ll) {
   inttoa(ll, 0, p->precision, 16, number, sizeof(number));
 
   p->width -= strlen(number);
-
   PAD_RIGHT(p);
-  if (p->is_square) { /* prefix '0x' for hex */
+
+  if (p->is_square && *number != '\0') { /* prefix '0x' for hex */
     PUT_CHAR('0', p);
     PUT_CHAR(*p->pf == 'p' ? 'x' : *p->pf, p);
   }
@@ -596,7 +600,6 @@ static void floating(struct DATA *p, double d) {
   char integral[MAX_INTEGRAL_SIZE], *pintegral = integral;
   char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
 
-  DEFAULT_PRECISION(p);
   d = ROUND_TO_PRECISION(d, p);
   floattoa(d, p->precision,
     integral, sizeof(integral), fraction, sizeof(fraction));
@@ -643,18 +646,14 @@ static void floating(struct DATA *p, double d) {
 static void exponent(struct DATA *p, double d) {
   char integral[MAX_INTEGRAL_SIZE], *pintegral = integral;
   char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
-  int log;
-
-  DEFAULT_PRECISION(p);
-
-  log = log_10(d);
+  int log = log_10(d);
   d /= pow_10(log); /* get the Mantissa */
   d = ROUND_TO_PRECISION(d, p);
 
   floattoa(d, p->precision,
     integral, sizeof(integral), fraction, sizeof(fraction));
   /* 1 for unit, 1 for the '.', 1 for 'e|E',
-   * 1 for '+|-', 3 for 'exp' */
+   * 1 for '+|-', 2 for 'exp' */
   /* calculate how much padding need */
   if (d > 0. && p->align == ALIGN_RIGHT) {
     p->width -= 1;  
@@ -779,12 +778,12 @@ static void conv_flags(struct DATA *p) {
 
 int vsnprintf(char *string, size_t length, const char *format, va_list args) {
   struct DATA data;
-  double d; /* temporary holder */
-  long long ll; /* temporary holder */
-  int state;
 
+  /* calculate only size of output string */
+  if (string == NULL) {
+    length = __SIZE_MAX__;
   /* sanity check, the string must be > 1 */
-  if (string == NULL || length < 1) {
+  } else if (length < 1) {
     return -1;
   }
 
@@ -793,34 +792,42 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
   data.pf = format;
   data.counter = 0;
 
-  for (; *data.pf && (data.counter < data.ps_size); data.pf++) {
+  for (; *data.pf != '\0' && (data.counter < data.ps_size); data.pf++) {
     if (*data.pf == '%') { /* we got a magic % cookie */
+      int is_continue = 1;
       conv_flags(&data); /* initialise format flags */
-      for (state = 1; *data.pf && state; ) {
+      while (*data.pf != '\0' && is_continue) {
         switch (*(++data.pf)) {
           case '\0': /* a NULL here ? ? bail out */
-            *data.ps = '\0';
+            PUT_CHAR('%', &data);
+            if (data.ps != NULL) {
+              *data.ps = '\0';
+            }
             return (int)data.counter;
 
           case 'f':
-          case 'F': /* decimal floating point */
+          case 'F': { /* decimal floating point */
+            double d;
             DOUBLE_ARG(&data, d);
             floating(&data, d);
-            state = 0;
+            is_continue = 0;
             break;
+          }
 
           case 'e':
-          case 'E': /* scientific (exponential) floating point */
+          case 'E': { /* scientific (exponential) floating point */
+            double d;
             DOUBLE_ARG(&data, d);
             exponent(&data, d);
-            state = 0;
+            is_continue = 0;
             break;
+          }
 
           case 'g':
           case 'G': { /* scientific or decimal floating point */
             int log;
+            double d;
             DOUBLE_ARG(&data, d);
-            DEFAULT_PRECISION(&data);
             log = log_10(d);
             /* use decimal floating point (%f / %F) if exponent is in the range
                [-4,precision] exclusively else use scientific floating
@@ -830,58 +837,72 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
             } else {
               exponent(&data, d);
             }
-            state = 0;
+            is_continue = 0;
             break;
           }
 
-          case 'u': /* unsigned decimal integer */
+          case 'u': { /* unsigned decimal integer */
+            long long ll;
             INTEGER_ARG(&data, unsigned, ll);
             decimal(&data, ll);
-            state = 0;
+            is_continue = 0;
             break;
+          }
 
           case 'i':
-          case 'd': /* signed decimal integer */
+          case 'd': { /* signed decimal integer */
+            long long ll;
             INTEGER_ARG(&data, signed, ll);
             decimal(&data, ll);
-            state = 0;
+            is_continue = 0;
             break;
+          }
 
-          case 'o': /* octal (always unsigned) */
+          case 'o': { /* octal (always unsigned) */
+            long long ll;
             INTEGER_ARG(&data, unsigned, ll);
             octal(&data, ll);
-            state = 0;
+            is_continue = 0;
             break;
+          }
 
           case 'x':
-          case 'X': /* hexadecimal (always unsigned) */
+          case 'X': { /* hexadecimal (always unsigned) */
+            long long ll;
             INTEGER_ARG(&data, unsigned, ll);
             hex(&data, ll);
-            state = 0;
+            is_continue = 0;
             break;
+          }
 
-          case 'c': /* single character */
-            ll = va_arg(args, int);
-            PUT_CHAR((char)ll, &data);
-            state = 0;
+          case 'c': { /* single character */
+            int i = va_arg(args, int);
+            PUT_CHAR((char)i, &data);
+            is_continue = 0;
             break;
+          }
 
           case 's': /* string of characters */
             WIDTH_AND_PRECISION_ARGS(&data);
             strings(&data, va_arg(args, char *));
-            state = 0;
+            is_continue = 0;
             break;
 
-          case 'p': /* pointer */
+          case 'p': { /* pointer */
+            void *v = va_arg(args, void *);
             data.is_square = 1;
-            ll = (long long)va_arg(args, void *);
-            ll == 0 ? strings(&data, "(nil)") : hex(&data, ll);
-            state = 0;
+            if (v == NULL) {
+              strings(&data, "(nil)");
+            } else {
+              hex(&data, (long long)v);
+            }
+            is_continue = 0;
             break;
+          }
 
           case 'n': /* what's the count ? */
             *(va_arg(args, int *)) = (int)data.counter;
-            state = 0;
+            is_continue = 0;
             break;
 
           case 'l': /* long or long long */
@@ -902,7 +923,7 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
 
           case '%': /* nothing just % */
             PUT_CHAR('%', &data);
-            state = 0;
+            is_continue = 0;
             break;
 
           case '#':
@@ -926,16 +947,19 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
 
           default:
             /* is this an error ? maybe bail out */
-            state = 0;
+            PUT_CHAR('%', &data);
+            is_continue = 0;
             break;
         } /* end switch */
-      } /* end of for state */
+      } /* end of while */
     } else { /* not % */
       PUT_CHAR(*data.pf, &data); /* add the char the string */
     }
   }
 
-  *data.ps = '\0'; /* the end ye ! */
+  if (data.ps != NULL) {
+    *data.ps = '\0'; /* the end ye ! */
+  }
 
   return (int)data.counter;
 }
