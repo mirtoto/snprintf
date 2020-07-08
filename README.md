@@ -1,7 +1,7 @@
 # snprintf()
 Lightweight and with minimal dependencies implementation of `snprintf()` C function. Especially it is independend from mathematical functions from `math.h` which are not always available for embedded platforms.
 
-From many years I was using almost unchanged orginal implementation of Alain Magloire (v1.1) but last time I needed more compliant with standard implementation replacement of `snprintf()` function.
+From many years I was using almost unchanged orginal implementation of Alain Magloire (v1.1) but last time I needed replacement of `snprintf()` function more compliant with standard implementation.
 
 ## Function prototype
 
