@@ -64,7 +64,7 @@ int main(void) {
 |  d / i   | signed decimal integer
 |  u       | unsigned decimal integer
 |  o       | unsigned octal integer
-|  x       | unsigned hexadecimal integer
+|  x / X   | unsigned hexadecimal integer
 |  f / F   | decimal floating point
 |  e / E   | scientific (exponential) floating point
 |  g / G   | scientific or decimal floating point
