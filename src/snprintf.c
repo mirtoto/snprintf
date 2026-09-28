@@ -699,13 +699,17 @@ static void hex(struct DATA *p, long long ll) {
 /** Format @p str string according to @p p flags. */
 static void strings(struct DATA *p, const char *s) {
   const char *src = s == NULL ? "(null)" : s;
-  size_t len = strlen(src);
+  size_t len = 0;
   size_t padding = 0;
   size_t available;
   size_t copy_length;
 
-  if (p->precision >= 0 && len > (size_t)p->precision) {
-    len = (size_t)p->precision;
+  if (p->precision >= 0) {
+    while (len < (size_t)p->precision && src[len] != '\0') {
+      len++;
+    }
+  } else {
+    len = strlen(src);
   }
 
   if (p->width > 0 && len < (size_t)p->width) {

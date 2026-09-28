@@ -730,6 +730,12 @@ MU_TEST(test_string_precision_as_parameter) {
 	TEST(11, "HelloWorld!", ret);
 }
 
+MU_TEST(test_string_precision_nonterminated_span) {
+	const char span[1] = {'Q'};
+	int ret = snprintf(msg, sizeof(msg), "%.1s", span);
+	TEST(1, "Q", ret);
+}
+
 MU_TEST(test_string_width_and_precision_as_parameter) {
 	int ret = snprintf(msg, sizeof(msg), "%-*.*s%*.*s!",
 		10, 10, "Hello", 10, 10, "World");
@@ -911,6 +917,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_string_with_less_than_input_precision_equal_width);
 	MU_RUN_TEST(test_string_width_as_parameter);
 	MU_RUN_TEST(test_string_precision_as_parameter);
+	MU_RUN_TEST(test_string_precision_nonterminated_span);
 	MU_RUN_TEST(test_string_width_and_precision_as_parameter);
 	MU_RUN_TEST(test_string_width_as_parameter_negative);
 	MU_RUN_TEST(test_string_too_long);
