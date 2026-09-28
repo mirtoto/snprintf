@@ -580,7 +580,7 @@ static void hex(struct DATA *p, long long ll) {
 }
 
 /** Format @p str string according to @p p flags. */
-static void strings(struct DATA *p, char *s) {
+static void strings(struct DATA *p, const char *s) {
   int len = (int)strlen(s);
   if (p->precision != PRECISION_UNSET && len > p->precision) { /* the smallest number */
     len = p->precision;
