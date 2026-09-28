@@ -12,8 +12,19 @@ extern "C" {
 #endif
 
 
+#ifdef USE_SNPRINTF_PREFIX
+#define SNPRINTF_PREFIX(name) my_##name
+#else
+#define SNPRINTF_PREFIX(name) name
+#endif
+
+
 /** @see snprintf() */
-int vsnprintf(char *string, size_t length, const char *format, va_list args) __attribute__((format(printf, 3, 0)));
+int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, va_list args)
+#if !defined(__MINGW32__)
+    __attribute__((format(printf, 3, 0)))
+#endif
+;
 
 /**
  * Implementation of snprintf() function which create @p string of maximum
@@ -63,7 +74,26 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) __a
  * @retval >=0 Amount of characters put in @p string.
  * @retval  -1 Output buffer size is too small.
  */
-int snprintf(char *string, size_t length, const char *format, ...) __attribute__((format(printf, 3, 4)));
+int SNPRINTF_PREFIX(snprintf)(char *string, size_t length, const char *format, ...)
+#if !defined(__MINGW32__)
+    __attribute__((format(printf, 3, 4)))
+#endif
+;
+
+
+#ifdef USE_SNPRINTF_PREFIX
+
+#ifdef snprintf
+#undef snprintf
+#endif
+#define snprintf SNPRINTF_PREFIX(snprintf)
+
+#ifdef vsnprintf
+#undef vsnprintf
+#endif
+#define vsnprintf SNPRINTF_PREFIX(vsnprintf)
+
+#endif // #ifdef USE_SNPRINTF_PREFIX
 
 
 #ifdef __cplusplus

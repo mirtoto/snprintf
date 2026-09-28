@@ -781,7 +781,7 @@ static void conv_flags(struct DATA *p) {
   }
 }
 
-int vsnprintf(char *string, size_t length, const char *format, va_list args) {
+int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, va_list args) {
   struct DATA data;
 
   /* calculate only size of output string */
@@ -969,12 +969,12 @@ int vsnprintf(char *string, size_t length, const char *format, va_list args) {
   return (int)data.counter;
 }
 
-int snprintf(char *string, size_t length, const char *format, ...) {
+int SNPRINTF_PREFIX(snprintf)(char *string, size_t length, const char *format, ...) {
   int rval;
   va_list args;
 
   va_start(args, format);
-  rval = vsnprintf(string, length, format, args);
+  rval = SNPRINTF_PREFIX(vsnprintf)(string, length, format, args);
   va_end(args);
 
   return rval;

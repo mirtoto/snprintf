@@ -1,8 +1,11 @@
 // Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
 #include <limits.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "minunit.h"
+
+#include "snprintf.h"
 
 #include "tests-snprintf.h"
 

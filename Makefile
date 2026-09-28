@@ -1,5 +1,5 @@
 CC		:= gcc
-CFLAGS	:= -Wall -Wextra -g
+CFLAGS	:= -DUSE_SNPRINTF_PREFIX -Wall -Wextra -g
 
 BIN		:= bin
 SRC		:= src
