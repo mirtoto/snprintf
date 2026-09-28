@@ -72,6 +72,12 @@ For stricter validation, compile with `-DSNPRINTF_STRICT`.
 
 When enabled, malformed or unsupported format specifiers return `-1` instead of falling back in permissive mode.
 
+For example, enable it for the project build with:
+
+```sh
+make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_STRICT -Wall -Wextra -g"
+```
+
 This preserves the default compatibility model while giving embedded or security-sensitive builds an explicit safety option.
 
 ## Supported format specifiers
