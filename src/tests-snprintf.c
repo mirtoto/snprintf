@@ -92,6 +92,35 @@ MU_TEST(test_wrong_format_unsupported_type) {
 	TEST(4, "123%", ret);
 }
 
+MU_TEST(test_malformed_format_standard_like) {
+	int ret = snprintf(msg, sizeof(msg), "%q", 123);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+", 123);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%0", 123);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%#", 123);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.", 123);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%d %", 123);
+	TEST(5, "123 %", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%hh", 123);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%ll", 123);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%..d", 123);
+	TEST(3, "123", ret);
+}
+
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
@@ -466,6 +495,7 @@ MU_TEST_SUITE(test_suite) {
 
 	MU_RUN_TEST(test_wrong_format_no_type);
 	MU_RUN_TEST(test_wrong_format_unsupported_type);
+	MU_RUN_TEST(test_malformed_format_standard_like);
 
 	MU_RUN_TEST(test_char_dec);
 	MU_RUN_TEST(test_char_dec_min_and_max);

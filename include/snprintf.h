@@ -27,10 +27,12 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
 ;
 
 /**
- * Implementation of snprintf() function which create @p string of maximum
- * @p length - 1 according of instruction provided by @p format. 
- * 
- * # Supportted types
+ * Implementation of snprintf() function which writes up to @p length - 1
+ * characters to @p string according to the instructions in @p format.
+ *
+ * If @p string is NULL, the function calculates the required output length.
+ *
+ * # Supported types
  * 
  *  Type    | Description
  * -------- | ----------------------------------------
@@ -71,8 +73,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  * @param format Format of input parameters.
  * @param ... Input parameters according of @p format.
  * 
- * @retval >=0 Amount of characters put in @p string.
- * @retval  -1 Output buffer size is too small.
+ * @retval >=0 Number of characters that would be written, or that were written
+ *             when @p string is not NULL.
+ * @retval  -1 Output buffer is too small or invalid for the requested length.
  */
 int SNPRINTF_PREFIX(snprintf)(char *string, size_t length, const char *format, ...)
 #if !defined(__MINGW32__)

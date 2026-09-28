@@ -167,13 +167,13 @@ struct DATA {
     (p)->counter++;                                     \
   }
 
-/** Put optionally '+' character to to output buffer if there is enough space. */
+/** Put an optional '+' sign in the output buffer when there is space. */
 #define PUT_PLUS(d, p)                                  \
   if ((d) > 0 && (p)->align == ALIGN_RIGHT) {           \
     PUT_CHAR('+', p);                                   \
   }
 
-/** Put optionally ' ' character to to output buffer if there is enough space. */
+/** Put an optional leading space if the number is positive and the flag is set. */
 #define PUT_SPACE(d, p)                                 \
   if ((p)->is_space && (d) > 0) {                       \
     PUT_CHAR(' ', p);                                   \

@@ -1,7 +1,7 @@
 # snprintf()
-Lightweight and with minimal dependencies implementation of `snprintf()` C function. Especially it is independend from mathematical functions from `math.h` which are not always available for embedded platforms.
+Lightweight, dependency-light implementation of the `snprintf()` C function. It avoids the `math.h` functions that are not always available on embedded platforms.
 
-From many years I was using almost unchanged orginal implementation of Alain Magloire (v1.1) but last time I needed replacement of `snprintf()` function more compliant with standard implementation.
+For many years I relied on the original implementation from Alain Magloire (v1.1), but I eventually needed a replacement that is more closely aligned with standard-library behavior.
 
 ## Function prototype
 
@@ -55,9 +55,21 @@ int main(void) {
 }
 ```
 
+## Standard-compatible behavior
+
+The formatter aims to follow libc behavior as closely as possible for valid format strings and common malformed cases.
+
+In particular:
+
+- supported conversions match the expected libc output for the types this implementation covers
+- malformed or unknown conversion specifiers fall back in a libc-like way instead of introducing stricter custom validation
+- mismatched argument types remain undefined behavior, just as with the standard printf family
+
+This keeps the implementation portable and behaviorally close to the C library without inventing a custom error policy.
+
 ## Supported format specifiers
 
-### Supportted types
+### Supported types
  
 |  Type    | Description
 | -------- | ----------------------------------------
