@@ -500,6 +500,21 @@ MU_TEST(test_double_large_fixed_truncates_safely) {
 	mu_assert_int_eq('X', buffer.canary);
 }
 
+MU_TEST(test_double_null_buffer_and_truncation) {
+	const char *format = "%.2f %.2e";
+	char output[32];
+	int required = snprintf(NULL, 0, format, 1.25, 12.5);
+	int written = snprintf(output, sizeof(output), format, 1.25, 12.5);
+	mu_assert_int_eq(13, required);
+	mu_assert_int_eq(required, written);
+	mu_assert_string_eq("1.25 1.25e+01", output);
+
+	char small_output[5];
+	int ret = snprintf(small_output, sizeof(small_output), "%.2f", 123.45);
+	mu_assert_int_eq(4, ret);
+	mu_assert_string_eq("123.", small_output);
+}
+
 MU_TEST(test_double_fraction_buffer_boundary) {
 	char expected[32] = "1.25";
 	memset(expected + 4, '0', 27);
@@ -729,6 +744,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_extreme_exponents_and_precision);
 	MU_RUN_TEST(test_double_finite_limits);
 	MU_RUN_TEST(test_double_large_fixed_truncates_safely);
+	MU_RUN_TEST(test_double_null_buffer_and_truncation);
 	MU_RUN_TEST(test_double_fraction_buffer_boundary);
 	MU_RUN_TEST(test_double_width_and_zero_padding);
 
