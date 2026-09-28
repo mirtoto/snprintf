@@ -672,25 +672,23 @@ static void floating(struct DATA *p, double d) {
   char integral[MAX_INTEGRAL_SIZE], *pintegral = integral;
   char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
   int is_general = *p->pf == 'g' || *p->pf == 'G';
+  int has_dot;
 
   d = ROUND_TO_PRECISION(d, p);
   floattoa(d, p->precision,
     integral, sizeof(integral), fraction, sizeof(fraction));
-    
-  /* calculate the padding. 1 for the dot */
-  if (d > 0. && (p->is_plus || p->is_space)) {
-    p->width -= 1;
-  }
-  p->width -= (int)strlen(integral) + p->precision + 1;
-  if (p->precision == 0) {
-    p->width += 1;
-  }
 
   if (is_general && !p->is_square) {
     size_t i;
     for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
       fraction[i - 1] = '\0';
     }
+  }
+  has_dot = p->is_square || (p->precision != 0 &&
+      (!is_general || fraction[0] != '\0'));
+  p->width -= (int)strlen(integral) + (int)strlen(fraction) + has_dot;
+  if (d > 0. && (p->is_plus || p->is_space)) {
+    p->width -= 1;
   }
   
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
@@ -713,8 +711,7 @@ static void floating(struct DATA *p, double d) {
     PUT_CHAR(*pintegral, p);
   }
 
-  if (p->is_square || (p->precision != 0 &&
-      (!is_general || fraction[0] != '\0'))) { /* put the '.' */
+  if (has_dot) { /* put the '.' */
     PUT_CHAR('.', p);
   }
 
