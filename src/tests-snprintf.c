@@ -1,5 +1,6 @@
 // Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
 #include <limits.h>
+#include <float.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -477,6 +478,14 @@ MU_TEST(test_double_extreme_exponents_and_precision) {
 	TEST(22, "0.00000000000000000001", ret);
 }
 
+MU_TEST(test_double_finite_limits) {
+	int ret = snprintf(msg, sizeof(msg), "%.6e", DBL_MIN);
+	TEST(13, "2.225074e-308", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.6e", DBL_MAX);
+	TEST(13, "1.797693e+308", ret);
+}
+
 MU_TEST(test_double_fraction_buffer_boundary) {
 	char expected[32] = "1.25";
 	memset(expected + 4, '0', 27);
@@ -492,6 +501,9 @@ MU_TEST(test_double_fraction_buffer_boundary) {
 	expected[31] = '\0';
 	ret = snprintf(msg, sizeof(msg), "%.29f", 1e-28);
 	TEST(31, expected, ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.7f", 0.9999999);
+	TEST(9, "0.9999999", ret);
 }
 
 MU_TEST(test_double_width_and_zero_padding) {
@@ -509,6 +521,9 @@ MU_TEST(test_double_width_and_zero_padding) {
 
 	ret = snprintf(msg, sizeof(msg), "%+012.2e", 12.5);
 	TEST(12, "+0001.25e+01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%012.2e", -12.5);
+	TEST(12, "-0001.25e+01", ret);
 
 	ret = snprintf(msg, sizeof(msg), "%10g|%-10g", 1.0, 1.0);
 	TEST(21, "         1|1         ", ret);
@@ -698,6 +713,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_g_boundaries_and_trim);
 	MU_RUN_TEST(test_double_e_rounds_mantissa);
 	MU_RUN_TEST(test_double_extreme_exponents_and_precision);
+	MU_RUN_TEST(test_double_finite_limits);
 	MU_RUN_TEST(test_double_fraction_buffer_boundary);
 	MU_RUN_TEST(test_double_width_and_zero_padding);
 

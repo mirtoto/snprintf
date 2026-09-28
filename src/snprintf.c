@@ -517,12 +517,14 @@ static void floattoa(double number, int precision,
 
   /* the fractional part */
   for (i = 0, fp = fraction; precision > 0 && i < output_fraction_size - 1; i++, precision--) {
-    output_fraction[i] = (char)(int)((fp + PRECISION) * 10. + '0');
+    double scaled = fp * 10.;
+    int digit = (int)scaled;
+    output_fraction[i] = (char)digit + '0';
     if (!isdigit(output_fraction[i])) { /* underflow ? */
       break;
     }
 
-    fp = (fp * 10.0) - (double)(long)((fp + PRECISION) * 10.);
+    fp = scaled - digit;
   }
   output_fraction[i] = '\0';
 }
