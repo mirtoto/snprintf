@@ -96,6 +96,15 @@ MU_TEST(test_wrong_format_unsupported_type) {
 MU_TEST(test_plus_flag_and_left_align) {
 	int ret = snprintf(msg, sizeof(msg), "%+-10d", 123);
 	TEST(10, "+123      ", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+10d", 123);
+	TEST(10, "      +123", ret);
+
+	ret = snprintf(msg, sizeof(msg), "% 10d", 123);
+	TEST(10, "       123", ret);
+
+	ret = snprintf(msg, sizeof(msg), "% -10d", 123);
+	TEST(10, " 123      ", ret);
 }
 
 MU_TEST(test_strict_mode_rejects_malformed_specifier) {
@@ -122,6 +131,15 @@ MU_TEST(test_wrong_format_unsupported_type) {
 MU_TEST(test_plus_flag_and_left_align) {
 	int ret = snprintf(msg, sizeof(msg), "%+-10d", 123);
 	TEST(10, "+123      ", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+10d", 123);
+	TEST(10, "      +123", ret);
+
+	ret = snprintf(msg, sizeof(msg), "% 10d", 123);
+	TEST(10, "       123", ret);
+
+	ret = snprintf(msg, sizeof(msg), "% -10d", 123);
+	TEST(10, " 123      ", ret);
 }
 
 MU_TEST(test_malformed_format_standard_like) {
