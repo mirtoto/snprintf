@@ -19,6 +19,28 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  * 
  * Revision History:
+ *
+ * @version 3.0
+ * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - Closer printf compatibility: Corrected sign and alignment flag handling, 
+ *    zero-padding order, alternate octal zero, negative dynamic widths, 
+ *    and %g significant-digit precision and notation boundaries.
+ *  - Opt-in strict validation: SNPRINTF_STRICT rejects malformed formats and 
+ *    unsupported flags, including malformed format tails after output 
+ *    truncation. The default remains permissive.
+ *  - Safer format processing: Width and precision parsing now saturates 
+ *    instead of overflowing. Negative dynamic precision and INT_MIN width 
+ *    are handled safely, and padding uses bounded bulk writes instead of 
+ *    potentially huge per-character loops.
+ *  - More robust floating-point output: Added NaN/Inf handling and fixes for 
+ *    exponent carry, tiny values, high precision, field widths, and buffer 
+ *    boundaries.
+ *  - Optional math backend: The default floating-point implementation remains 
+ *    self-contained. SNPRINTF_USE_MATH opts into <math.h> functions; 
+ *    some toolchains require -lm.
+ *  - Documentation and regression tests: Updated the README and public-header 
+ *    documentation; expanded tests across integer, string, parser, 
+ *    and floating-point edge cases.
  * 
  * @version 2.3
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
