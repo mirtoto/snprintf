@@ -1,6 +1,7 @@
 // Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
 #include <limits.h>
 #include <float.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -524,6 +525,53 @@ MU_TEST(test_double_large_fixed_truncates_safely) {
 	mu_assert_int_eq('X', buffer.canary);
 }
 
+MU_TEST(test_special_float_values) {
+	int ret = snprintf(msg, sizeof(msg), "%f %E %G", INFINITY, -INFINITY, NAN);
+	TEST(12, "inf -INF NAN", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+8f", INFINITY);
+	TEST(8, "    +inf", ret);
+	ret = snprintf(msg, sizeof(msg), "%-8F", -INFINITY);
+	TEST(8, "-INF    ", ret);
+}
+
+MU_TEST(test_extreme_format_width_and_precision) {
+	struct {
+		char output[8];
+		char canary;
+	} buffer;
+	char expected[32] = "1.25";
+	memset(expected + 4, '0', 27);
+	expected[31] = '\0';
+	buffer.canary = 'X';
+
+	const char *wide_format = "%2147483648s";
+	int ret = snprintf(buffer.output, sizeof(buffer.output), wide_format, "x");
+	mu_assert_int_eq(7, ret);
+	for (size_t i = 0; i < sizeof(buffer.output) - 1; i++) {
+		mu_check(buffer.output[i] == ' ');
+	}
+	mu_check(buffer.output[7] == '\0');
+	mu_assert_int_eq('X', buffer.canary);
+
+	const char *dynamic_width_format = "%*s";
+	ret = snprintf(buffer.output, sizeof(buffer.output), dynamic_width_format,
+		INT_MIN, "x");
+	mu_assert_int_eq(7, ret);
+	mu_check(buffer.output[0] == 'x');
+	for (size_t i = 1; i < sizeof(buffer.output) - 1; i++) {
+		mu_check(buffer.output[i] == ' ');
+	}
+	mu_check(buffer.output[7] == '\0');
+	mu_assert_int_eq('X', buffer.canary);
+
+	const char *wide_precision_format = "%.2147483648f";
+	ret = snprintf(msg, sizeof(msg), wide_precision_format, 1.25);
+	TEST(31, expected, ret);
+	ret = snprintf(msg, sizeof(msg), "%.*f", INT_MIN, 1.25);
+	TEST(8, "1.250000", ret);
+}
+
 MU_TEST(test_double_null_buffer_and_truncation) {
 	const char *format = "%.2f %.2e";
 	char output[32];
@@ -594,6 +642,9 @@ MU_TEST(test_double_dynamic_width_and_precision) {
 
 	ret = snprintf(msg, sizeof(msg), "%*.*e", 12, 2, -12.5);
 	TEST(12, "   -1.25e+01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.*f", INT_MIN, 1.25);
+	TEST(8, "1.250000", ret);
 }
 
 MU_TEST(test_double_alternate_form_zero_precision_width) {
@@ -668,7 +719,7 @@ MU_TEST(test_string_width_and_precision_as_parameter) {
 
 MU_TEST(test_string_width_as_parameter_negative) {
 	int ret = snprintf(msg, sizeof(msg), "%*s", -20, "Hello World!");
-	TEST(12, "Hello World!", ret);
+	TEST(20, "Hello World!        ", ret);
 }
 
 MU_TEST(test_string_too_long) {
@@ -788,6 +839,8 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_extreme_exponents_and_precision);
 	MU_RUN_TEST(test_double_finite_limits);
 	MU_RUN_TEST(test_double_large_fixed_truncates_safely);
+	MU_RUN_TEST(test_special_float_values);
+	MU_RUN_TEST(test_extreme_format_width_and_precision);
 	MU_RUN_TEST(test_double_null_buffer_and_truncation);
 	MU_RUN_TEST(test_double_fraction_buffer_boundary);
 	MU_RUN_TEST(test_double_width_and_zero_padding);

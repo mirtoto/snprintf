@@ -78,6 +78,7 @@
  */
 
 #include <ctype.h>
+#include <float.h>
 #include <limits.h>
 #include <string.h>
 #ifdef SNPRINTF_USE_MATH
@@ -161,6 +162,20 @@ struct DATA {
     (p)->counter++;                                     \
   }
 
+#define PUT_REPEAT(c, p, count)                         \
+  do {                                                  \
+    size_t repeat_count = (count) > 0 ? (size_t)(count) : 0; \
+    size_t available = (p)->ps_size - (p)->counter;     \
+    if (repeat_count > available) {                     \
+      repeat_count = available;                         \
+    }                                                   \
+    if ((p)->ps != NULL && repeat_count > 0) {           \
+      memset((p)->ps, (unsigned char)(c), repeat_count);\
+      (p)->ps += repeat_count;                          \
+    }                                                   \
+    (p)->counter += repeat_count;                       \
+  } while (0)
+
 /** Put an optional '+' sign in the output buffer when the flag is set. */
 #define PUT_PLUS(d, p)                                  \
   if ((d) > 0 && (p)->is_plus) {                        \
@@ -175,27 +190,36 @@ struct DATA {
 
 /** Padding right optionally. */
 #define PAD_RIGHT(p)                                    \
-  if ((p)->width > 0 && (p)->align != ALIGN_LEFT) {     \
-    for (; (p)->width > 0; (p)->width--) {              \
-      PUT_CHAR((p)->pad, p);                            \
+  do {                                                  \
+    if ((p)->width > 0 && (p)->align != ALIGN_LEFT) {   \
+      PUT_REPEAT((p)->pad, p, (p)->width);              \
+      (p)->width = 0;                                   \
     }                                                   \
-  }
+  } while (0)
 
 /** Padding left optionally. */
 #define PAD_LEFT(p)                                     \
-  if ((p)->width > 0 && (p)->align == ALIGN_LEFT) {     \
-    for (; (p)->width > 0; (p)->width--) {              \
-      PUT_CHAR((p)->pad, p);                            \
+  do {                                                  \
+    if ((p)->width > 0 && (p)->align == ALIGN_LEFT) {   \
+      PUT_REPEAT((p)->pad, p, (p)->width);              \
+      (p)->width = 0;                                   \
     }                                                   \
-  }
+  } while (0)
 
 /** Get width and precision arguments if available. */
 #define WIDTH_AND_PRECISION_ARGS(p)                     \
   if ((p)->is_star_w) {                                 \
-    (p)->width = va_arg(args, int);                     \
+    int width_arg = va_arg(args, int);                  \
+    if (width_arg < 0) {                                \
+      (p)->align = ALIGN_LEFT;                           \
+      (p)->width = width_arg == INT_MIN ? INT_MAX : -width_arg; \
+    } else {                                            \
+      (p)->width = width_arg;                           \
+    }                                                   \
   }                                                     \
   if ((p)->is_star_p) {                                 \
-    (p)->precision = va_arg(args, int);                 \
+    int precision_arg = va_arg(args, int);              \
+    (p)->precision = precision_arg < 0 ? PRECISION_UNSET : precision_arg; \
   }
 
 /** Get integer argument of given type and convert it to long long. */
@@ -221,6 +245,8 @@ struct DATA {
   WIDTH_AND_PRECISION_ARGS(p);                          \
   if ((p)->precision == PRECISION_UNSET) {              \
     (p)->precision = 6;                                 \
+  } else if ((p)->precision >= MAX_FRACTION_SIZE) {     \
+    (p)->precision = MAX_FRACTION_SIZE - 1;             \
   }                                                     \
   d = va_arg(args, double);
 
@@ -236,15 +262,20 @@ struct DATA {
  * 
  * @return Number of parsed character form @p a.
  */
-static int strtoi(const char *a, int *res) {
-  int i = 0;
+static size_t strtoi(const char *a, int *res) {
+  size_t i = 0;
+  unsigned int value = 0;
 
-  *res = 0;
-
-  for (; a[i] != '\0' && isdigit(a[i]); i++) {
-    *res = *res * 10 + (a[i] - '0');
+  for (; a[i] != '\0' && isdigit((unsigned char)a[i]); i++) {
+    unsigned int digit = (unsigned int)(a[i] - '0');
+    if (value > ((unsigned int)INT_MAX - digit) / 10U) {
+      value = INT_MAX;
+    } else {
+      value = value * 10U + digit;
+    }
   }
 
+  *res = (int)value;
   return i;
 }
 
@@ -568,9 +599,8 @@ static void decimal(struct DATA *p, long long ll) {
   p->width -= (int)strlen(digits) + sign;
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_sign_prefix(p, ll);
-    for (; p->width > 0; p->width--) {
-      PUT_CHAR('0', p);
-    }
+    PUT_REPEAT('0', p, p->width);
+    p->width = 0;
   } else {
     PAD_RIGHT(p);
     emit_sign_prefix(p, ll);
@@ -602,9 +632,8 @@ static void octal(struct DATA *p, long long ll) {
   p->width -= (int)strlen(number) + (prefix != NULL ? 1 : 0);
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
-    for (; p->width > 0; p->width--) {
-      PUT_CHAR('0', p);
-    }
+    PUT_REPEAT('0', p, p->width);
+    p->width = 0;
   } else {
     PAD_RIGHT(p);
     emit_format_prefix(p, prefix);
@@ -631,9 +660,8 @@ static void hex(struct DATA *p, long long ll) {
   p->width -= (int)strlen(number) + (prefix != NULL ? (int)strlen(prefix) : 0);
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
-    for (; p->width > 0; p->width--) {
-      PUT_CHAR('0', p);
-    }
+    PUT_REPEAT('0', p, p->width);
+    p->width = 0;
   } else {
     PAD_RIGHT(p);
     emit_format_prefix(p, prefix);
@@ -664,6 +692,43 @@ static void strings(struct DATA *p, const char *s) {
   }
 
   PAD_LEFT(p);
+}
+
+static int special_float(struct DATA *p, double value) {
+  int is_nan = value != value;
+  int is_negative = value < 0.;
+  int is_upper = *p->pf == 'F' || *p->pf == 'E' || *p->pf == 'G';
+  const char *text;
+  char pad = p->pad;
+
+  if (is_nan) {
+    text = is_upper ? "NAN" : "nan";
+  } else if (value > DBL_MAX || value < -DBL_MAX) {
+    text = is_upper ? "INF" : "inf";
+  } else {
+    return 0;
+  }
+
+  p->width -= (int)strlen(text) +
+      (is_negative || p->is_plus || p->is_space ? 1 : 0);
+  p->pad = ' ';
+  PAD_RIGHT(p);
+
+  if (is_negative) {
+    PUT_CHAR('-', p);
+  } else if (p->is_plus) {
+    PUT_CHAR('+', p);
+  } else if (p->is_space) {
+    PUT_CHAR(' ', p);
+  }
+
+  while (*text != '\0') {
+    PUT_CHAR(*text++, p);
+  }
+
+  PAD_LEFT(p);
+  p->pad = pad;
+  return 1;
 }
 
 /** 
@@ -700,9 +765,8 @@ static void floating(struct DATA *p, double d) {
       PUT_PLUS(d, p);
       PUT_SPACE(d, p);
     }
-    for (; p->width > 0; p->width--) {
-      PUT_CHAR('0', p);
-    }
+    PUT_REPEAT('0', p, p->width);
+    p->width = 0;
   } else {
     PAD_RIGHT(p);
     PUT_PLUS(d, p);
@@ -766,9 +830,8 @@ static void exponent(struct DATA *p, double d) {
       PUT_PLUS(d, p);
       PUT_SPACE(d, p);
     }
-    for (; p->width > 0; p->width--) {
-      PUT_CHAR('0', p);
-    }
+    PUT_REPEAT('0', p, p->width);
+    p->width = 0;
   } else {
     PAD_RIGHT(p);
     PUT_PLUS(d, p);
@@ -922,7 +985,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'F': { /* decimal floating point */
             double d;
             DOUBLE_ARG(&data, d);
-            floating(&data, d);
+            if (!special_float(&data, d)) {
+              floating(&data, d);
+            }
             is_continue = 0;
             break;
           }
@@ -931,7 +996,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'E': { /* scientific (exponential) floating point */
             double d;
             DOUBLE_ARG(&data, d);
-            exponent(&data, d);
+            if (!special_float(&data, d)) {
+              exponent(&data, d);
+            }
             is_continue = 0;
             break;
           }
@@ -941,6 +1008,10 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             int log;
             double d;
             DOUBLE_ARG(&data, d);
+            if (special_float(&data, d)) {
+              is_continue = 0;
+              break;
+            }
             if (data.precision < 0) {
               data.precision = 6;
             } else if (data.precision == 0) {
