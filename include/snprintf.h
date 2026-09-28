@@ -11,6 +11,17 @@
 extern "C" {
 #endif
 
+/**
+ * Optional strict validation mode.
+ *
+ * When defined at compile time, malformed or unsupported format specifiers
+ * return -1 instead of falling back in libc-like permissive mode.
+ * The default behavior remains backward-compatible and libc-like.
+ */
+#ifdef SNPRINTF_STRICT
+#define SNPRINTF_STRICT_MODE 1
+#endif
+
 
 #ifdef USE_SNPRINTF_PREFIX
 #define SNPRINTF_PREFIX(name) my_##name

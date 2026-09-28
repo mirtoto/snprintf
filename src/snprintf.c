@@ -98,6 +98,7 @@ struct DATA {
   size_t ps_size;             /**< size of DATA::ps - 1 */
   char *ps;                   /**< pointer to output string */
   const char *pf;             /**< pointer to input format string */
+  unsigned int invalid:1;     /**< strict-mode format validation failed */
 
 /** Value of DATA::width - undefined width of field. */
 #define WIDTH_UNSET          -1
@@ -775,6 +776,7 @@ static void conv_flags(struct DATA *p) {
   p->precision = PRECISION_UNSET;
   p->is_star_w = p->is_star_p = 0;
   p->is_square = p->is_plus = p->is_space = 0;
+  p->invalid = 0;
   p->a_long = INT_LEN_DEFAULT;
   p->align = ALIGN_UNSET;
   p->pad = ' ';
@@ -839,6 +841,9 @@ static void conv_flags(struct DATA *p) {
         return;
 
       default:
+#ifdef SNPRINTF_STRICT
+        p->invalid = 1;
+#endif
         p->pf--; /* went to far go back */
         return;
     }
@@ -865,9 +870,19 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
     if (*data.pf == '%') { /* we got a magic % cookie */
       int is_continue = 1;
       conv_flags(&data); /* initialise format flags */
+#ifdef SNPRINTF_STRICT
+      if (data.invalid) {
+        return -1;
+      }
+#endif
       while (*data.pf != '\0' && is_continue) {
         switch (*(++data.pf)) {
           case '\0': /* a NULL here ? ? bail out */
+#ifdef SNPRINTF_STRICT
+            if (data.invalid) {
+              return -1;
+            }
+#endif
             PUT_CHAR('%', &data);
             if (data.ps != NULL) {
               *data.ps = '\0';
@@ -1015,10 +1030,15 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             break;
 
           default:
+#ifdef SNPRINTF_STRICT
+            data.invalid = 1;
+            return -1;
+#else
             /* is this an error ? maybe bail out */
             PUT_CHAR('%', &data);
             is_continue = 0;
             break;
+#endif
         } /* end switch */
       } /* end of while */
     } else { /* not % */

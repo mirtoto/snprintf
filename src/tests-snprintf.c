@@ -82,6 +82,33 @@ MU_TEST(test_buffer_length_3) {
 #pragma clang diagnostic ignored "-Wformat"
 #endif
 
+#ifdef SNPRINTF_STRICT
+MU_TEST(test_wrong_format_no_type) {
+	int ret = snprintf(msg, sizeof(msg), "%d%", 123);
+	TEST(4, "123%", ret);
+}
+
+MU_TEST(test_wrong_format_unsupported_type) {
+	int ret = snprintf(msg, sizeof(msg), "%d%v", 123);
+	mu_assert_int_eq(-1, ret);
+}
+
+MU_TEST(test_plus_flag_and_left_align) {
+	int ret = snprintf(msg, sizeof(msg), "%+-10d", 123);
+	TEST(10, "+123      ", ret);
+}
+
+MU_TEST(test_strict_mode_rejects_malformed_specifier) {
+	int ret = snprintf(msg, sizeof(msg), "%q", 123);
+	mu_assert_int_eq(-1, ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+", 123);
+	mu_assert_int_eq(-1, ret);
+
+	ret = snprintf(msg, sizeof(msg), "%0", 123);
+	mu_assert_int_eq(-1, ret);
+}
+#else
 MU_TEST(test_wrong_format_no_type) {
 	int ret = snprintf(msg, sizeof(msg), "%d%", 123);
 	TEST(4, "123%", ret);
@@ -125,6 +152,7 @@ MU_TEST(test_malformed_format_standard_like) {
 	ret = snprintf(msg, sizeof(msg), "%..d", 123);
 	TEST(3, "123", ret);
 }
+#endif
 
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -507,7 +535,11 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_wrong_format_no_type);
 	MU_RUN_TEST(test_wrong_format_unsupported_type);
 	MU_RUN_TEST(test_plus_flag_and_left_align);
+#ifndef SNPRINTF_STRICT
 	MU_RUN_TEST(test_malformed_format_standard_like);
+#else
+	MU_RUN_TEST(test_strict_mode_rejects_malformed_specifier);
+#endif
 
 	MU_RUN_TEST(test_char_dec);
 	MU_RUN_TEST(test_char_dec_min_and_max);

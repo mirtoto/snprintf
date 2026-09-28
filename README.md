@@ -61,11 +61,20 @@ The formatter aims to follow libc behavior as closely as possible for valid form
 
 In particular:
 
-- supported conversions match the expected libc output for the types this implementation covers
+- the parser is permissive but not fully "standard-printf" strict
 - malformed or unknown conversion specifiers fall back in a libc-like way instead of introducing stricter custom validation
+- the design intentionally mirrors libc fallback behavior for malformed specifiers
 - mismatched argument types remain undefined behavior, just as with the standard printf family
+- this is a good compatibility choice, but it is not a safety-oriented validation layer
 
 This keeps the implementation portable and behaviorally close to the C library without inventing a custom error policy.
+
+### Optional strict mode
+
+For safety-oriented code, the library can be compiled with `-DSNPRINTF_STRICT`.
+When that macro is enabled, malformed or unsupported format specifiers trigger a deterministic `-1` result instead of permissive libc-style fallback behavior.
+
+This preserves the default compatibility mode while offering an explicit opt-in safety check for stricter validation.
 
 ## Supported format specifiers
 
