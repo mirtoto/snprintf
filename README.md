@@ -1,7 +1,16 @@
 # snprintf()
-Lightweight, dependency-light implementation of the `snprintf()` C function. It avoids the `math.h` functions that are not always available on embedded platforms.
 
-This implementation is intentionally small and portable. It aims to follow libc-style formatting behavior closely for the supported conversions while staying usable in embedded and minimal environments.
+Lightweight, dependency-light implementation of the C `snprintf()` family. It is intended for small embedded or minimal builds where a full libc formatter is not available and where avoiding `math.h` is desirable.
+
+The project aims to stay portable and close to libc behavior for the supported conversions, while still keeping the implementation small and easy to embed.
+
+## Features
+
+- portable formatter for common `printf`-style conversions
+- no dependency on `math.h`
+- supports the standard integer, floating-point, string, character, and pointer cases used by this project
+- default behavior is intentionally libc-like and permissive
+- optional strict validation mode for safety-oriented builds
 
 ## Function prototype
 
@@ -9,43 +18,103 @@ This implementation is intentionally small and portable. It aims to follow libc-
 int snprintf(char *string, size_t length, const char *format, ...);
 ```
 
-### Input parameters
+### Parameters
 
-|  Parameter  | Description
-| ----------- | ----------------------------------------
-|  `string`   | Output buffer.
-|  `length`   | Size of output buffer `string`.
-|  `format`   | Format of input parameters.
-|  `...`      | Input parameters according to `format`.
+| Parameter | Description |
+| --------- | ----------- |
+| `string` | Output buffer. If `NULL`, the function calculates the required output length. |
+| `length` | Capacity of the output buffer, excluding the terminating null byte. |
+| `format` | Format string controlling the output. |
+| `...` | Variadic arguments consumed by the format string. |
 
-### Return values
+### Return value
 
-|  Value      | Description
-| ----------- | ----------------------------------------
-|  >=0        | Amount of characters put (or would be put in case of `string` is set to `NULL`) in `string`.
-|  -1         | Output buffer `string` size is too small.
+| Value | Meaning |
+| ----- | ------- |
+| `>= 0` | Number of characters written, or the number that would have been written when `string` is `NULL`. |
+| `-1` | Invalid buffer size or a strict-mode validation failure. |
 
-## How to use it
+## Usage
 
-Just copy `src/snprintf.c` & `include/snprintf.h` to your project and include `snprintf.h` in your code.
+Copy `src/snprintf.c` and `include/snprintf.h` into your project and include `snprintf.h`.
 
 ```c
 #include <stdio.h>
-
 #include "snprintf.h"
-  
-int main(int argc, char *argv[]) {
-  const char *hello = "Hello", *world = "World";
-  char msg[0x100] = "";
+
+int main(void) {
+  const char *hello = "Hello";
+  const char *world = "World";
+  char msg[128] = {0};
 
   snprintf(msg, sizeof(msg), "%s %s!", hello, world);
   printf("%s\n", msg);
-  
   return 0;
 }
- ```
+```
 
-In `src/tests-snprintf.c` & `include/tests-snprintf.h` you can find set of tests based on [MinUnit](https://github.com/siu/minunit) engine, which can be run by `tests_snprintf()` function.
+## Compatibility model
+
+The default implementation is intentionally permissive and mirrors libc fallback behavior for malformed format strings when possible. This makes it behave like a lightweight libc-compatible formatter instead of a strict custom validator.
+
+In particular:
+
+- the parser is permissive rather than fully strict `printf`-validator behavior
+- malformed or unsupported specifiers often fall back in a libc-like way
+- the design favors compatibility over custom safety checks
+- mismatched argument types remain undefined behavior, matching standard `printf` semantics
+
+This is a good default for portability and compatibility, but it is not a safety-oriented validation layer.
+
+### Optional strict mode
+
+For stricter validation, compile with `-DSNPRINTF_STRICT`.
+
+When enabled, malformed or unsupported format specifiers return `-1` instead of falling back in permissive mode.
+
+This preserves the default compatibility model while giving embedded or security-sensitive builds an explicit safety option.
+
+## Supported format specifiers
+
+### Types
+
+| Type | Description |
+| ---- | ----------- |
+| `d` / `i` | signed decimal integer |
+| `u` | unsigned decimal integer |
+| `o` | unsigned octal integer |
+| `x` / `X` | unsigned hexadecimal integer |
+| `f` / `F` | decimal floating point |
+| `e` / `E` | scientific notation |
+| `g` / `G` | shortest of `%e` and `%f` |
+| `c` | character |
+| `s` | string |
+| `p` | pointer |
+| `%` | percent sign |
+
+### Length modifiers
+
+| Modifier | Description |
+| -------- | ----------- |
+| `hh` | `signed char` / `unsigned char` |
+| `h` | `short` / `unsigned short` |
+| `l` | `long` / `unsigned long` |
+| `ll` | `long long` / `unsigned long long` |
+
+### Flags
+
+| Flag | Description |
+| ---- | ----------- |
+| `-` | left-justify |
+| `+` | force a leading plus sign for positive numbers |
+| `#` | alternate form (`0x`, `0X`, `0`) |
+| `*` | width and/or precision supplied as an `int` argument |
+| `0` | zero-pad numeric output |
+| space | prefix a blank for positive signed values |
+
+## Testing
+
+The project includes a small MinUnit-based suite in `src/tests-snprintf.c` and `include/tests-snprintf.h`.
 
 ```c
 #include "tests-snprintf.h"
@@ -55,66 +124,7 @@ int main(void) {
 }
 ```
 
-## Standard-compatible behavior
-
-The formatter aims to follow libc behavior as closely as possible for valid format strings and common malformed cases.
-
-In particular:
-
-- the parser is permissive but not fully "standard-printf" strict
-- malformed or unknown conversion specifiers fall back in a libc-like way instead of introducing stricter custom validation
-- the design intentionally mirrors libc fallback behavior for malformed specifiers
-- mismatched argument types remain undefined behavior, just as with the standard printf family
-- this is a good compatibility choice, but it is not a safety-oriented validation layer
-
-This keeps the implementation portable and behaviorally close to the C library without inventing a custom error policy.
-
-### Optional strict mode
-
-For safety-oriented code, the library can be compiled with `-DSNPRINTF_STRICT`.
-When that macro is enabled, malformed or unsupported format specifiers trigger a deterministic `-1` result instead of permissive libc-style fallback behavior.
-
-This preserves the default compatibility mode while offering an explicit opt-in safety check for stricter validation.
-
-## Supported format specifiers
-
-### Supported types
- 
-|  Type    | Description
-| -------- | ----------------------------------------
-|  d / i   | signed decimal integer
-|  u       | unsigned decimal integer
-|  o       | unsigned octal integer
-|  x / X   | unsigned hexadecimal integer
-|  f / F   | decimal floating point
-|  e / E   | scientific (exponential) floating point
-|  g / G   | scientific or decimal floating point
-|  c       | character
-|  s       | string
-|  p       | pointer
-|  %       | percent character
- 
-### Supported lengths
- 
-|  Length  | Description
-| -------- | ----------------------------------------
-|  hh      | signed / unsigned char
-|  h       | signed / unsigned short
-|  l       | signed / unsigned long
-|  ll      | signed / unsigned long long
- 
-### Supported flags
- 
-|   Flag   | Description
-| -------- | ----------------------------------------
-|  -       | justify left
-|  +       | justify right or put a plus if number
-|  #       | prefix 0x, 0X for hex and 0 for octal
-|  *       | width and/or precision is specified as an int argument
-|  0       | for number padding with zeros instead of spaces
-|  (space) | leave a blank for number with no sign
-
 ## Authors
 
-* Mirosław Toton, mirtoto@gmail.com
-* Alain Magloire, alainm@rcsm.ee.mcgill.ca
+- Mirosław Toton, mirtoto@gmail.com
+- Alain Magloire, alainm@rcsm.ee.mcgill.ca
