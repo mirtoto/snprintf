@@ -102,7 +102,6 @@ struct DATA {
   size_t ps_size;             /**< size of DATA::ps - 1 */
   char *ps;                   /**< pointer to output string */
   const char *pf;             /**< pointer to input format string */
-  unsigned int invalid:1;     /**< strict-mode format validation failed */
 
 /** Value of DATA::width - undefined width of field. */
 #define WIDTH_UNSET          -1
@@ -777,7 +776,6 @@ static void conv_flags(struct DATA *p) {
   p->precision = PRECISION_UNSET;
   p->is_star_w = p->is_star_p = 0;
   p->is_square = p->is_plus = p->is_space = 0;
-  p->invalid = 0;
   p->a_long = INT_LEN_DEFAULT;
   p->align = ALIGN_UNSET;
   p->pad = ' ';
@@ -842,9 +840,6 @@ static void conv_flags(struct DATA *p) {
         return;
 
       default:
-#ifdef SNPRINTF_STRICT
-        p->invalid = 1;
-#endif
         p->pf--; /* Reprocess this character as the conversion specifier. */
         return;
     }
@@ -867,22 +862,20 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
   data.pf = format;
   data.counter = 0;
 
-  for (; *data.pf != '\0' && (data.counter < data.ps_size); data.pf++) {
+  for (; *data.pf != '\0'; data.pf++) {
+#ifndef SNPRINTF_STRICT
+    if (data.counter >= data.ps_size) {
+      break;
+    }
+#endif
     if (*data.pf == '%') { /* Start parsing a conversion specifier. */
       int is_continue = 1;
       conv_flags(&data); /* initialise format flags */
-#ifdef SNPRINTF_STRICT
-      if (data.invalid) {
-        return -1;
-      }
-#endif
       while (*data.pf != '\0' && is_continue) {
         switch (*(++data.pf)) {
           case '\0': /* The format string ended before a conversion specifier. */
 #ifdef SNPRINTF_STRICT
-            if (data.invalid) {
-              return -1;
-            }
+            return -1;
 #endif
             PUT_CHAR('%', &data);
             if (data.ps != NULL) {
@@ -968,6 +961,12 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           }
 
           case 's': /* string of characters */
+#ifdef SNPRINTF_STRICT
+            if (data.is_square || data.is_plus || data.is_space ||
+                data.pad == '0' || data.a_long != INT_LEN_DEFAULT) {
+              return -1;
+            }
+#endif
             WIDTH_AND_PRECISION_ARGS(&data);
             strings(&data, va_arg(args, char *));
             is_continue = 0;
@@ -1032,7 +1031,6 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
 
           default:
 #ifdef SNPRINTF_STRICT
-            data.invalid = 1;
             return -1;
 #else
             /* is this an error ? maybe bail out */

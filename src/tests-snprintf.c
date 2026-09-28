@@ -85,11 +85,14 @@ MU_TEST(test_buffer_length_3) {
 #ifdef SNPRINTF_STRICT
 MU_TEST(test_wrong_format_no_type) {
 	int ret = snprintf(msg, sizeof(msg), "%d%", 123);
-	TEST(4, "123%", ret);
+	mu_assert_int_eq(-1, ret);
 }
 
 MU_TEST(test_wrong_format_unsupported_type) {
 	int ret = snprintf(msg, sizeof(msg), "%d%v", 123);
+	mu_assert_int_eq(-1, ret);
+
+	ret = snprintf(msg, 2, "A%v", 123);
 	mu_assert_int_eq(-1, ret);
 }
 
@@ -115,6 +118,9 @@ MU_TEST(test_strict_mode_rejects_malformed_specifier) {
 	mu_assert_int_eq(-1, ret);
 
 	ret = snprintf(msg, sizeof(msg), "%0", 123);
+	mu_assert_int_eq(-1, ret);
+
+	ret = snprintf(msg, sizeof(msg), "%#s", "text");
 	mu_assert_int_eq(-1, ret);
 }
 #else
