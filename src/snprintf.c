@@ -62,29 +62,18 @@
  * @author Alain Magloire, alainm@rcsm.ee.mcgill.ca
  *  - suppot %s %c %d
  *
- * For the floating point format the challenge was finding a way to
- * manipulate the Real numbers without having to resort to mathematical
- * function (it would require to link with -lm) and not going down
- * to the bit pattern (not portable).
+ * The floating-point path avoids libm by using a compact decimal conversion
+ * routine that keeps the formatter portable in embedded or minimal builds.
  *
- * So a number, a real is:
+ * Points:
+ *  - split the value into its integral and fractional parts;
+ *  - estimate decimal magnitude without a libm dependency;
+ *  - extract digits one decimal place at a time;
+ *  - reverse them into normal left-to-right output order;
+ *  - reuse the same approach for mantissa/exponent rendering and %g/%G trim logic.
  *
- *    real = integral + fraction
- *
- *    integral = ... + a(2)*10^2 + a(1)*10^1 + a(0)*10^0
- *    fraction = b(1)*10^-1 + b(2)*10^-2 + ...
- *
- *    where:
- *      0 <= a(i) => 9
- *      0 <= b(i) => 9
- *
- *   from then it was simple math
- *
- * THANKS (for the patches and ideas):
- *  - Miles Bader
- *  - Cyrille Rustom
- *  - Jacek Slabocewiz
- *  - Mike Parker (mouse)
+ * This is a practical, portable renderer for the supported formatting cases,
+ * not a full IEEE-754 conversion engine.
  */
 
 #include <ctype.h>
@@ -360,14 +349,27 @@ static double pow_10(int n) {
 }
 
 /**
- * Function find the integral part of the log in base 10.
- * 
- * @note This not a real log10().
- *    I just need and approximation (integerpart) of x in:
- *      10^x ~= r
- *   
- *    log_10(200) = 2;
- *    log_10(250) = 2;
+ * Decimal rendering strategy for floating-point values.
+ *
+ * Points:
+ *  - split the number into integral and fractional parts with integral();
+ *  - estimate decimal magnitude using log_10() and powers of 10;
+ *  - extract digits one decimal place at a time and reverse them into the
+ *    normal left-to-right order;
+ *  - reuse the same method for mantissa/exponent rendering with %e/%E;
+ *  - trim trailing zeros for %g/%G to keep libc-like output formatting.
+ *
+ * This is not a fully general IEEE-754 conversion routine, but it is a compact,
+ * portable approach that matches the project's formatting goals for the
+ * supported floating-point conversions.
+ */
+
+/**
+ * Approximate the base-10 magnitude of @p r for decimal splitting.
+ *
+ * This is a lightweight helper used to locate the digit group boundaries for
+ * floating-point formatting; it is not a general-purpose replacement for
+ * libm's logarithm functions.
  */
 static int log_10(double r) {
   int i = 0;
@@ -399,8 +401,10 @@ static int log_10(double r) {
 }
 
 /**
- * Function return the fraction part of a @p real and set in @p ip the integral
- * part. In many ways it resemble the modf() found on most Un*x.
+ * Split @p real into its integral and fractional parts.
+ *
+ * The behavior mirrors the common `modf()` style used by libc, but the
+ * implementation stays self-contained for portable formatting.
  */
 static double integral(double real, double *ip) {
   int log;
