@@ -259,6 +259,16 @@ MU_TEST(test_long_long_dec_max) {
 	mu_check(atoll(msg) == d);
 }
 
+MU_TEST(test_long_long_zero_pad_negative) {
+	int ret = snprintf(msg, sizeof(msg), "%020lld", -1LL);
+	TEST(20, "-0000000000000000001", ret);
+}
+
+MU_TEST(test_long_long_hex_zero_pad_alternative) {
+	int ret = snprintf(msg, sizeof(msg), "%#020llx", 123ULL);
+	TEST(20, "0x00000000000000007b", ret);
+}
+
 MU_TEST(test_long_long_hex) {
 	int ret = snprintf(msg, sizeof(msg), "%llx %llX", 123000000000ll, 123000000000ll);
 	TEST(21, "1ca35f0e00 1CA35F0E00", ret);
@@ -490,6 +500,8 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_long_long_dec);
 	MU_RUN_TEST(test_long_long_dec_min);
 	MU_RUN_TEST(test_long_long_dec_max);
+	MU_RUN_TEST(test_long_long_zero_pad_negative);
+	MU_RUN_TEST(test_long_long_hex_zero_pad_alternative);
 	MU_RUN_TEST(test_long_long_hex);
 	MU_RUN_TEST(test_long_long_hex_alternative);
 	MU_RUN_TEST(test_long_long_hex_width_as_type);

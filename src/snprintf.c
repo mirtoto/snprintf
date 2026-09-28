@@ -523,18 +523,49 @@ static void floattoa(double number, int precision,
 
 /** Format @p ll number as ASCII decimal string according to @p p flags. */
 static void decimal(struct DATA *p, long long ll) {
-  char number[MAX_INTEGRAL_SIZE], *pnumber = number;
+  char number[MAX_INTEGRAL_SIZE];
+  const char *digits = number;
+  int sign = 0;
+
   inttoa(ll, *p->pf == 'i' || *p->pf == 'd', p->precision, 10,
     number, sizeof(number));
 
-  p->width -= strlen(number);
-  PAD_RIGHT(p);
+  if (ll < 0) {
+    digits = number + 1;
+    sign = 1;
+  } else if (p->align == ALIGN_RIGHT) {
+    sign = 1;
+  } else if (p->is_space) {
+    sign = 1;
+  }
 
-  PUT_PLUS(ll, p);
-  PUT_SPACE(ll, p);
+  p->width -= (int)strlen(digits) + sign;
+  if (p->pad == '0' && p->align != ALIGN_LEFT) {
+    if (ll < 0) {
+      PUT_CHAR('-', p);
+    } else if (p->align == ALIGN_RIGHT) {
+      PUT_CHAR('+', p);
+    } else if (p->is_space) {
+      PUT_CHAR(' ', p);
+    }
 
-  for (; *pnumber != '\0'; pnumber++) {
-    PUT_CHAR(*pnumber, p);
+    for (; p->width > 0; p->width--) {
+      PUT_CHAR('0', p);
+    }
+  } else {
+    PAD_RIGHT(p);
+
+    if (ll < 0) {
+      PUT_CHAR('-', p);
+    } else if (p->align == ALIGN_RIGHT) {
+      PUT_CHAR('+', p);
+    } else if (p->is_space) {
+      PUT_CHAR(' ', p);
+    }
+  }
+
+  for (; *digits != '\0'; digits++) {
+    PUT_CHAR(*digits, p);
   }
 
   PAD_LEFT(p);
@@ -543,13 +574,29 @@ static void decimal(struct DATA *p, long long ll) {
 /** Format @p ll number as ASCII octal string according to @p p flags. */
 static void octal(struct DATA *p, long long ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
+  int prefix = 0;
+
   inttoa(ll, 0, p->precision, 8, number, sizeof(number));
 
-  p->width -= strlen(number);
-  PAD_RIGHT(p);
+  if (p->is_square && *number != '\0') {
+    prefix = 1;
+  }
 
-  if (p->is_square && *number != '\0') { /* prefix '0' for octal */
-    PUT_CHAR('0', p);
+  p->width -= (int)strlen(number) + prefix;
+  if (p->pad == '0' && p->align != ALIGN_LEFT) {
+    if (prefix) {
+      PUT_CHAR('0', p);
+    }
+
+    for (; p->width > 0; p->width--) {
+      PUT_CHAR('0', p);
+    }
+  } else {
+    PAD_RIGHT(p);
+
+    if (prefix) {
+      PUT_CHAR('0', p);
+    }
   }
 
   for (; *pnumber != '\0'; pnumber++) {
@@ -562,14 +609,31 @@ static void octal(struct DATA *p, long long ll) {
 /** Format @p ll number as ASCII hexadecimal string according to @p p flags. */
 static void hex(struct DATA *p, long long ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
+  int prefix = 0;
+
   inttoa(ll, 0, p->precision, 16, number, sizeof(number));
 
-  p->width -= strlen(number);
-  PAD_RIGHT(p);
+  if (p->is_square && *number != '\0') {
+    prefix = 2;
+  }
 
-  if (p->is_square && *number != '\0') { /* prefix '0x' for hex */
-    PUT_CHAR('0', p);
-    PUT_CHAR(*p->pf == 'p' ? 'x' : *p->pf, p);
+  p->width -= (int)strlen(number) + prefix;
+  if (p->pad == '0' && p->align != ALIGN_LEFT) {
+    if (prefix) {
+      PUT_CHAR('0', p);
+      PUT_CHAR(*p->pf == 'p' ? 'x' : *p->pf, p);
+    }
+
+    for (; p->width > 0; p->width--) {
+      PUT_CHAR('0', p);
+    }
+  } else {
+    PAD_RIGHT(p);
+
+    if (prefix) {
+      PUT_CHAR('0', p);
+      PUT_CHAR(*p->pf == 'p' ? 'x' : *p->pf, p);
+    }
   }
 
   for (; *pnumber != '\0'; pnumber++) {
