@@ -645,8 +645,10 @@ static void hex(struct DATA *p, long long ll) {
 
 /** Format @p str string according to @p p flags. */
 static void strings(struct DATA *p, const char *s) {
-  int len = (int)strlen(s);
-  if (p->precision != PRECISION_UNSET && len > p->precision) { /* the smallest number */
+  const char *src = s == NULL ? "(null)" : s;
+  int len = (int)strlen(src);
+
+  if (p->precision != PRECISION_UNSET && len > p->precision) {
     len = p->precision;
   }
 
@@ -654,8 +656,8 @@ static void strings(struct DATA *p, const char *s) {
 
   PAD_RIGHT(p);
 
-  for (; len-- > 0; s++) {
-    PUT_CHAR(*s, p);
+  for (; len-- > 0; src++) {
+    PUT_CHAR(*src, p);
   }
 
   PAD_LEFT(p);

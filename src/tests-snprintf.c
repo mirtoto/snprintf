@@ -382,6 +382,12 @@ MU_TEST(test_double_g_precision_2_7) {
 	TEST(27, "8.1300813e-09 8.1300813E-09", ret);
 }
 
+MU_TEST(test_string_null_pointer) {
+	const char *str = NULL;
+	int ret = snprintf(msg, sizeof(msg), "%s", str);
+	TEST(6, "(null)", ret);
+}
+
 MU_TEST(test_string) {
 	int ret = snprintf(msg, sizeof(msg), "%s", "Hello");
 	TEST(5, "Hello", ret);
@@ -548,6 +554,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_g_precision_0);
 	MU_RUN_TEST(test_double_g_precision_2_7);
 
+	MU_RUN_TEST(test_string_null_pointer);
 	MU_RUN_TEST(test_string);
 	MU_RUN_TEST(test_string_empty);
 	MU_RUN_TEST(test_string_width_20);
