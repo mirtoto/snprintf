@@ -280,12 +280,26 @@ MU_TEST(test_int_dec_width_as_parameter) {
 	TEST(5, "  123", ret);
 }
 
+MU_TEST(test_int_dynamic_precision) {
+	int ret = snprintf(msg, sizeof(msg), "%.*d %*.*x", 4, 12, 8, 4, 42u);
+	TEST(13, "0012     002a", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.*d", -1, 12);
+	TEST(2, "12", ret);
+}
+
 MU_TEST(test_int_dec_random) {
     time_t tt;
 	srand((unsigned int)time(&tt));
 	int d = rand();
 	snprintf(msg, sizeof(msg), "%d", d);
 	mu_check(atoll(msg) == d);
+}
+
+MU_TEST(test_int_i_length_modifiers) {
+	int ret = snprintf(msg, sizeof(msg), "%i %li %lli", -12, 123456l,
+		-123456789ll);
+	TEST(21, "-12 123456 -123456789", ret);
 }
 
 MU_TEST(test_int_hex) {
@@ -315,6 +329,12 @@ MU_TEST(test_octal_alternative_form) {
 	int ret = snprintf(msg, sizeof(msg), "%o %#o %#o %#.0o %#5o %#05o %#.4o",
 		0u, 0u, 8u, 0u, 0u, 0u, 1u);
 	TEST((int)strlen(expected), expected, ret);
+}
+
+MU_TEST(test_unsigned_long_and_octal_lengths) {
+	int ret = snprintf(msg, sizeof(msg), "%lu %llu %lo %llo",
+		123456ul, 123456789ull, 64ul, 64ull);
+	TEST(24, "123456 123456789 100 100", ret);
 }
 
 MU_TEST(test_long_dec) {
@@ -858,13 +878,16 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_int_dec_width_20_precision_10);
 	MU_RUN_TEST(test_int_dec_precision_0);
 	MU_RUN_TEST(test_int_dec_width_as_parameter);
+	MU_RUN_TEST(test_int_dynamic_precision);
 	MU_RUN_TEST(test_int_dec_random);
+	MU_RUN_TEST(test_int_i_length_modifiers);
 
 	MU_RUN_TEST(test_int_hex);
 	MU_RUN_TEST(test_int_hex_uppercase);
 	MU_RUN_TEST(test_int_hex_negative);
 	MU_RUN_TEST(test_int_hex_precision_0);
 	MU_RUN_TEST(test_octal_alternative_form);
+	MU_RUN_TEST(test_unsigned_long_and_octal_lengths);
 
 	MU_RUN_TEST(test_long_dec);
 	MU_RUN_TEST(test_long_hex);
