@@ -2,7 +2,7 @@
 
 /**
  * Portable snprintf() implementation.
- * @version 3.0
+ * @version 3.1
  *  
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,20 @@
  * 
  * Revision History:
  *
+ * @version 3.1
+ * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - Safer %n: Honors hh, h, l, and ll pointer types, preventing 
+ *    narrow-pointer overwrites.
+ *  - Safer %s: Uses size_t for source lengths, bounds precision-limited scans, 
+ *    and copies only bytes that fit.
+ *  - Bounded formatting work: Numeric parsing saturates instead of overflowing, 
+ *    and padding work is bounded by available output capacity.
+ *  - Floating-point edge handling: Avoids subnormal exponent underflow and 
+ *    handles NaN/Inf without entering decimal-conversion loops.
+ *  - Expanded tests: Adds coverage for %n canaries, non-NUL-terminated 
+ *    precision-limited strings, INT_MAX widths, subnormal doubles, 
+ *    and integer conversion/precision combinations.
+ * 
  * @version 3.0
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
  *  - Closer printf compatibility: Corrected sign and alignment flag handling, 
