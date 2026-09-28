@@ -486,6 +486,20 @@ MU_TEST(test_double_finite_limits) {
 	TEST(13, "1.797693e+308", ret);
 }
 
+MU_TEST(test_double_large_fixed_truncates_safely) {
+	struct {
+		char output[8];
+		char canary;
+	} buffer;
+	buffer.canary = 'X';
+
+	int ret = snprintf(buffer.output, sizeof(buffer.output), "%.0f", 1e100);
+	mu_assert_int_eq(7, ret);
+	mu_check(buffer.output[0] != '\0');
+	mu_check(buffer.output[7] == '\0');
+	mu_assert_int_eq('X', buffer.canary);
+}
+
 MU_TEST(test_double_fraction_buffer_boundary) {
 	char expected[32] = "1.25";
 	memset(expected + 4, '0', 27);
@@ -714,6 +728,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_e_rounds_mantissa);
 	MU_RUN_TEST(test_double_extreme_exponents_and_precision);
 	MU_RUN_TEST(test_double_finite_limits);
+	MU_RUN_TEST(test_double_large_fixed_truncates_safely);
 	MU_RUN_TEST(test_double_fraction_buffer_boundary);
 	MU_RUN_TEST(test_double_width_and_zero_padding);
 
