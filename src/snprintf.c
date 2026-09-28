@@ -118,6 +118,7 @@ struct DATA {
 
   unsigned int align:2;     /**< align of field */
   unsigned int is_square:1; /**< is field with hash flag? */
+  unsigned int is_plus:1;   /**< is field with plus sign flag? */
   unsigned int is_space:1;  /**< is field with space flag? */
   unsigned int is_dot:1;    /**< is field with dot flag? */
   unsigned int is_star_w:1; /**< is field with width defined? */
@@ -156,9 +157,9 @@ struct DATA {
     (p)->counter++;                                     \
   }
 
-/** Put an optional '+' sign in the output buffer when there is space. */
+/** Put an optional '+' sign in the output buffer when the flag is set. */
 #define PUT_PLUS(d, p)                                  \
-  if ((d) > 0 && (p)->align == ALIGN_RIGHT) {           \
+  if ((d) > 0 && (p)->is_plus) {                        \
     PUT_CHAR('+', p);                                   \
   }
 
@@ -529,7 +530,7 @@ static void floattoa(double number, int precision,
 static void emit_sign_prefix(struct DATA *p, long long value) {
   if (value < 0) {
     PUT_CHAR('-', p);
-  } else if (p->align == ALIGN_RIGHT) {
+  } else if (p->is_plus) {
     PUT_CHAR('+', p);
   } else if (p->is_space) {
     PUT_CHAR(' ', p);
@@ -557,9 +558,7 @@ static void decimal(struct DATA *p, long long ll) {
   if (ll < 0) {
     digits = number + 1;
     sign = 1;
-  } else if (p->align == ALIGN_RIGHT) {
-    sign = 1;
-  } else if (p->is_space) {
+  } else if (p->is_plus || p->is_space) {
     sign = 1;
   }
 
@@ -672,10 +671,13 @@ static void floating(struct DATA *p, double d) {
     integral, sizeof(integral), fraction, sizeof(fraction));
     
   /* calculate the padding. 1 for the dot */
-  if (d > 0. && p->align == ALIGN_RIGHT) {
-    p->width -= 1;  
+  if (d > 0. && (p->is_plus || p->is_space)) {
+    p->width -= 1;
   }
-  p->width -= p->is_space + (int)strlen(integral) + p->precision + 1;
+  p->width -= (int)strlen(integral) + p->precision + 1;
+  if (p->is_plus || p->is_space) {
+    p->width -= 0;
+  }
   if (p->precision == 0) {
     p->width += 1;
   }
@@ -722,10 +724,10 @@ static void exponent(struct DATA *p, double d) {
   /* 1 for unit, 1 for the '.', 1 for 'e|E',
    * 1 for '+|-', 2 for 'exp' */
   /* calculate how much padding need */
-  if (d > 0. && p->align == ALIGN_RIGHT) {
-    p->width -= 1;  
+  if (d > 0. && (p->is_plus || p->is_space)) {
+    p->width -= 1;
   }
-  p->width -= p->is_space + p->precision + 7;
+  p->width -= p->precision + 7;
   
   PAD_RIGHT(p);
   PUT_PLUS(d, p);
@@ -772,7 +774,7 @@ static void conv_flags(struct DATA *p) {
   p->width = WIDTH_UNSET;
   p->precision = PRECISION_UNSET;
   p->is_star_w = p->is_star_p = 0;
-  p->is_square = p->is_space = 0;
+  p->is_square = p->is_plus = p->is_space = 0;
   p->a_long = INT_LEN_DEFAULT;
   p->align = ALIGN_UNSET;
   p->pad = ' ';
@@ -799,7 +801,7 @@ static void conv_flags(struct DATA *p) {
         break;
 
       case '+':
-        p->align = ALIGN_RIGHT;
+        p->is_plus = 1;
         break;
 
       case '-':

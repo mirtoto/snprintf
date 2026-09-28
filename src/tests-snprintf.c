@@ -92,6 +92,11 @@ MU_TEST(test_wrong_format_unsupported_type) {
 	TEST(4, "123%", ret);
 }
 
+MU_TEST(test_plus_flag_and_left_align) {
+	int ret = snprintf(msg, sizeof(msg), "%+-10d", 123);
+	TEST(10, "+123      ", ret);
+}
+
 MU_TEST(test_malformed_format_standard_like) {
 	int ret = snprintf(msg, sizeof(msg), "%q", 123);
 	TEST(1, "%", ret);
@@ -501,6 +506,7 @@ MU_TEST_SUITE(test_suite) {
 
 	MU_RUN_TEST(test_wrong_format_no_type);
 	MU_RUN_TEST(test_wrong_format_unsupported_type);
+	MU_RUN_TEST(test_plus_flag_and_left_align);
 	MU_RUN_TEST(test_malformed_format_standard_like);
 
 	MU_RUN_TEST(test_char_dec);
