@@ -831,7 +831,13 @@ static void exponent(struct DATA *p, double d) {
   int is_general = *p->pf == 'g' || *p->pf == 'G';
   int has_dot;
   int exponent_digits;
-  d /= pow_10(log); /* get the Mantissa */
+  if (log < 0) {
+    for (int scale = 0; scale > log; scale--) {
+      d *= 10.;
+    }
+  } else {
+    d /= pow_10(log);
+  }
   d = ROUND_TO_PRECISION(d, p);
   if (d >= 10. || d <= -10.) {
     d /= 10.;

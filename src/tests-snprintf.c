@@ -510,6 +510,13 @@ MU_TEST(test_double_finite_limits) {
 
 	ret = snprintf(msg, sizeof(msg), "%.6e", DBL_MAX);
 	TEST(13, "1.797693e+308", ret);
+
+	double min_subnormal = nextafter(0.0, 1.0);
+	ret = snprintf(msg, sizeof(msg), "%.6e", min_subnormal);
+	TEST(13, "4.940656e-324", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.6g", min_subnormal);
+	TEST(12, "4.94066e-324", ret);
 }
 
 MU_TEST(test_double_large_fixed_truncates_safely) {
