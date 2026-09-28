@@ -62,8 +62,9 @@
  * @author Alain Magloire, alainm@rcsm.ee.mcgill.ca
  *  - suppot %s %c %d
  *
- * The floating-point path avoids libm by using a compact decimal conversion
- * routine that keeps the formatter portable in embedded or minimal builds.
+ * By default, floating-point conversion uses self-contained helpers so it
+ * works on targets without <math.h> or libm. Define SNPRINTF_USE_MATH to use
+ * math.h helpers when the header and library are available.
  *
  * Points:
  *  - split the value into its integral and fractional parts;
@@ -72,13 +73,16 @@
  *  - reverse them into normal left-to-right output order;
  *  - reuse the same approach for mantissa/exponent rendering and %g/%G trim logic.
  *
- * This is a practical, portable renderer for the supported formatting cases,
- * not a full IEEE-754 conversion engine.
+ * This is an intentionally limited renderer for the formatter's supported
+ * conversions, not a general-purpose IEEE-754 conversion engine.
  */
 
 #include <ctype.h>
 #include <limits.h>
 #include <string.h>
+#ifdef SNPRINTF_USE_MATH
+#include <math.h>
+#endif
 
 #include "snprintf.h"
 
@@ -311,6 +315,9 @@ static void inttoa(long long number, int is_signed, int precision, int base,
 
 /** Find the nth power of 10. */
 static double pow_10(int n) {
+#ifdef SNPRINTF_USE_MATH
+  return pow(10., (double)n);
+#else
   int i = 1;
   double p = 1., m;
 
@@ -326,6 +333,7 @@ static double pow_10(int n) {
   }
 
   return p;
+#endif
 }
 
 /**
@@ -347,11 +355,17 @@ static double pow_10(int n) {
 /**
  * Approximate the base-10 magnitude of @p r for decimal splitting.
  *
- * This is a lightweight helper used to locate the digit group boundaries for
- * floating-point formatting; it is not a general-purpose replacement for
- * libm's logarithm functions.
+ * The default implementation is a lightweight helper for locating digit
+ * boundaries. SNPRINTF_USE_MATH delegates this calculation to log10().
  */
 static int log_10(double r) {
+#ifdef SNPRINTF_USE_MATH
+  if (r == 0.) {
+    return 0;
+  }
+
+  return (int)floor(log10(fabs(r)));
+#else
   int i = 0;
   double result = 1.;
 
@@ -378,15 +392,23 @@ static int log_10(double r) {
   }
 
   return i;
+#endif
 }
 
 /**
  * Split @p real into its integral and fractional parts.
  *
- * The behavior mirrors the common `modf()` style used by libc, but the
- * implementation stays self-contained for portable formatting.
+ * The default implementation stays self-contained; SNPRINTF_USE_MATH uses
+ * modf() for the split.
  */
 static double integral(double real, double *ip) {
+#ifdef SNPRINTF_USE_MATH
+  if (real < 0.) {
+    real = -real;
+  }
+
+  return modf(real, ip);
+#else
   int log;
   double real_integral = 0.;
 
@@ -417,6 +439,7 @@ static double integral(double real, double *ip) {
 
   *ip = real_integral;
   return (real - real_integral);
+#endif
 }
 
 /** Maximum size of the buffer for the integral part. */

@@ -7,7 +7,7 @@ The project aims to stay portable and close to libc behavior for the supported c
 ## Features
 
 - portable formatter for common `printf`-style conversions
-- no dependency on `math.h`
+- formatter implementation has no `math.h` dependency by default
 - supports the standard integer, floating-point, string, character, and pointer cases used by this project
 - default behavior is intentionally libc-like and permissive
 - optional strict validation mode for safety-oriented builds
@@ -79,6 +79,14 @@ make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_STRICT -Wall -Wextra -g"
 ```
 
 This preserves the default compatibility model while giving embedded or security-sensitive builds an explicit safety option.
+
+### Optional math library support
+
+The default floating-point conversion uses self-contained helpers and does not require `math.h` or libm. Define `SNPRINTF_USE_MATH` to use `pow()`, `log10()`, `floor()`, `fabs()`, and `modf()` from `math.h` instead. On toolchains where these functions are provided by a separate math library, link with `-lm`:
+
+```sh
+make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g" LIBRARIES="-lm"
+```
 
 ## Supported format specifiers
 

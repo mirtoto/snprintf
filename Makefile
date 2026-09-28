@@ -43,7 +43,7 @@ run: all
 	$(CC) $(CFLAGS) $(CINCLUDES) -c $< -o $@
 
 $(BIN)/$(EXECUTABLE): $(OBJECTS) | $(BIN)/
-	$(CC) $(CLIBS) -o $@ $(LIBRARIES) $^
+	$(CC) $(CLIBS) -o $@ $^ $(LIBRARIES)
 
 $(BIN)/:
 	$(MKDIR) $@
