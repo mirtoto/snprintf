@@ -33,7 +33,7 @@ static char msg[32] = {0, };
 
 #if __GNUC__ >= 7
 #pragma GCC diagnostic push
-// We're testing that truncation works properly, so temporarily disable the warning.
+// These tests intentionally exercise truncation; suppress GCC's format warnings.
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 #pragma GCC diagnostic ignored "-Wformat="
 #endif
@@ -78,7 +78,7 @@ MU_TEST(test_buffer_length_3) {
 
 #ifdef __clang__
 #pragma clang diagnostic push
-// We're testing that wrong format works properly, so temporarily disable the warning.
+// These tests intentionally use malformed formats; suppress Clang's format warning.
 #pragma clang diagnostic ignored "-Wformat"
 #endif
 

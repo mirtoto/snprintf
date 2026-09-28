@@ -1,7 +1,7 @@
 // Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
 
 /**
- * Unix snprintf() implementation.
+ * Portable snprintf() implementation.
  * @version 2.3
  *  
  * This program is free software; you can redistribute it and/or modify
@@ -220,28 +220,6 @@ struct DATA {
     (p)->precision = 6;                                 \
   }                                                     \
   d = va_arg(args, double);
-
-/**
- * Convert maximum @p n characters of @p a string to integer.
- * 
- * Function stop conversion and return result in any of the following cases:
- *  - encounter end of string ('\0') character,
- *  - encounter non digit character,
- *  - reach @p n characters.
- * 
- * @return Integer (as type 'int') representation of @p a.
- *
-static int antoi(const char *a, size_t n) {
-  size_t i = 0;
-  int res = 0;
-
-  for (; a[i] != '\0' && i < n && isdigit(a[i]); i++) {
-    res = res * 10 + (a[i] - '0');
-  }
-
-  return res;
-}
- */
 
 /**
  * Convert @p a string to @p res integer.
@@ -844,7 +822,7 @@ static void conv_flags(struct DATA *p) {
 #ifdef SNPRINTF_STRICT
         p->invalid = 1;
 #endif
-        p->pf--; /* went to far go back */
+        p->pf--; /* Reprocess this character as the conversion specifier. */
         return;
     }
   }
@@ -853,10 +831,10 @@ static void conv_flags(struct DATA *p) {
 int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, va_list args) {
   struct DATA data;
 
-  /* calculate only size of output string */
+  /* Count the required output length without writing to a buffer. */
   if (string == NULL) {
     length = __SIZE_MAX__;
-  /* sanity check, the string must be > 1 */
+  /* A non-NULL output buffer must have nonzero capacity. */
   } else if (length < 1) {
     return -1;
   }
@@ -867,7 +845,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
   data.counter = 0;
 
   for (; *data.pf != '\0' && (data.counter < data.ps_size); data.pf++) {
-    if (*data.pf == '%') { /* we got a magic % cookie */
+    if (*data.pf == '%') { /* Start parsing a conversion specifier. */
       int is_continue = 1;
       conv_flags(&data); /* initialise format flags */
 #ifdef SNPRINTF_STRICT
@@ -877,7 +855,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
 #endif
       while (*data.pf != '\0' && is_continue) {
         switch (*(++data.pf)) {
-          case '\0': /* a NULL here ? ? bail out */
+          case '\0': /* The format string ended before a conversion specifier. */
 #ifdef SNPRINTF_STRICT
             if (data.invalid) {
               return -1;
