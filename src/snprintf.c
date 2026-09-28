@@ -693,9 +693,21 @@ static void floating(struct DATA *p, double d) {
     }
   }
   
-  PAD_RIGHT(p);
-  PUT_PLUS(d, p);
-  PUT_SPACE(d, p);
+  if (p->pad == '0' && p->align != ALIGN_LEFT) {
+    if (*pintegral == '-') {
+      PUT_CHAR(*pintegral++, p);
+    } else {
+      PUT_PLUS(d, p);
+      PUT_SPACE(d, p);
+    }
+    for (; p->width > 0; p->width--) {
+      PUT_CHAR('0', p);
+    }
+  } else {
+    PAD_RIGHT(p);
+    PUT_PLUS(d, p);
+    PUT_SPACE(d, p);
+  }
 
   for (; *pintegral != '\0'; pintegral++) {
     PUT_CHAR(*pintegral, p);
@@ -722,6 +734,8 @@ static void exponent(struct DATA *p, double d) {
   char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
   int log = log_10(d);
   int is_general = *p->pf == 'g' || *p->pf == 'G';
+  int has_dot;
+  int exponent_digits;
   d /= pow_10(log); /* get the Mantissa */
   d = ROUND_TO_PRECISION(d, p);
   if (d >= 10. || d <= -10.) {
@@ -737,24 +751,36 @@ static void exponent(struct DATA *p, double d) {
       fraction[i - 1] = '\0';
     }
   }
-  /* 1 for unit, 1 for the '.', 1 for 'e|E',
-   * 1 for '+|-', 2 for 'exp' */
-  /* calculate how much padding need */
+  has_dot = p->is_square || (p->precision != 0 &&
+      (!is_general || fraction[0] != '\0'));
+  exponent_digits = log <= -100 || log >= 100 ? 3 : 2;
+  p->width -= (int)strlen(integral) + (int)strlen(fraction) + has_dot +
+      exponent_digits + 2;
   if (d > 0. && (p->is_plus || p->is_space)) {
     p->width -= 1;
   }
-  p->width -= p->precision + 7;
-  
-  PAD_RIGHT(p);
-  PUT_PLUS(d, p);
-  PUT_SPACE(d, p);
+
+  if (p->pad == '0' && p->align != ALIGN_LEFT) {
+    if (*pintegral == '-') {
+      PUT_CHAR(*pintegral++, p);
+    } else {
+      PUT_PLUS(d, p);
+      PUT_SPACE(d, p);
+    }
+    for (; p->width > 0; p->width--) {
+      PUT_CHAR('0', p);
+    }
+  } else {
+    PAD_RIGHT(p);
+    PUT_PLUS(d, p);
+    PUT_SPACE(d, p);
+  }
 
   for (; *pintegral != '\0'; pintegral++) {
     PUT_CHAR(*pintegral, p);
   }
 
-  if (p->is_square || (p->precision != 0 &&
-      (!is_general || fraction[0] != '\0'))) { /* the '.' */
+  if (has_dot) { /* the '.' */
     PUT_CHAR('.', p);
   }
   for (; *pfraction != '\0'; pfraction++) {

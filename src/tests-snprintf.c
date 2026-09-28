@@ -465,6 +465,34 @@ MU_TEST(test_double_e_rounds_mantissa) {
 	TEST(12, "1.000000e+01", ret);
 }
 
+MU_TEST(test_double_extreme_exponents_and_precision) {
+	int ret = snprintf(msg, sizeof(msg), "%e %e", 1e-300, 1e300);
+	TEST(27, "1.000000e-300 1.000000e+300", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.6f", 1e-8);
+	TEST(8, "0.000000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.20f", 1e-20);
+	TEST(22, "0.00000000000000000001", ret);
+}
+
+MU_TEST(test_double_width_and_zero_padding) {
+	int ret = snprintf(msg, sizeof(msg), "%+012.2f", 12.5);
+	TEST(12, "+00000012.50", ret);
+
+	ret = snprintf(msg, sizeof(msg), "% 012.2f", 12.5);
+	TEST(12, " 00000012.50", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%012.2f", -12.5);
+	TEST(12, "-00000012.50", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%-12.2e", 12.5);
+	TEST(12, "1.25e+01    ", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+012.2e", 12.5);
+	TEST(12, "+0001.25e+01", ret);
+}
+
 MU_TEST(test_string_null_pointer) {
 	const char *str = NULL;
 	int ret = snprintf(msg, sizeof(msg), "%s", str);
@@ -645,6 +673,8 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_negative_and_sign_flags);
 	MU_RUN_TEST(test_double_g_boundaries_and_trim);
 	MU_RUN_TEST(test_double_e_rounds_mantissa);
+	MU_RUN_TEST(test_double_extreme_exponents_and_precision);
+	MU_RUN_TEST(test_double_width_and_zero_padding);
 
 	MU_RUN_TEST(test_string_null_pointer);
 	MU_RUN_TEST(test_string);
