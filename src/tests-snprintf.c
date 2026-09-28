@@ -399,6 +399,10 @@ MU_TEST(test_double_f_precision_0) {
 	int ret = snprintf(msg, sizeof(msg), "%.0f %.0f %.0F",
 		0.0, 123.0, 123.0 + 1.0 / 3);
 	TEST(9, "0 123 123", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f %.0f %.0f %.0f",
+		2.4, 2.6, -2.4, -2.6);
+	TEST(9, "2 3 -2 -3", ret);
 }
 
 MU_TEST(test_double_f_precision_2_3) {
@@ -454,6 +458,15 @@ MU_TEST(test_double_g_alternate_form_and_significant_precision) {
 
 	ret = snprintf(msg, sizeof(msg), "%.3g %.3G", 123.456, 123.456);
 	TEST(7, "123 123", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%#.3g %#.3G", 12000.0, 12000.0);
+	TEST(17, "1.20e+04 1.20E+04", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*.*g", 8, 3, 123.456);
+	TEST(8, "     123", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*.*g", 8, -1, 1.25);
+	TEST(8, "    1.25", ret);
 }
 
 MU_TEST(test_double_negative_and_sign_flags) {
