@@ -1,8 +1,8 @@
-// Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
+// Copyright (C) 2019-2026 Miroslaw Toton, mirtoto@gmail.com
 
 /**
  * Portable snprintf() implementation.
- * @version 2.3
+ * @version 3.0
  *  
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1124,8 +1124,24 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             break;
           }
 
-          case 'n': /* what's the count ? */
-            *(va_arg(args, int *)) = (int)data.counter;
+          case 'n': /* Store the output count using the requested integer type. */
+            switch (data.a_long) {
+              case INT_LEN_CHAR:
+                *va_arg(args, signed char *) = (signed char)data.counter;
+                break;
+              case INT_LEN_SHORT:
+                *va_arg(args, short *) = (short)data.counter;
+                break;
+              case INT_LEN_LONG:
+                *va_arg(args, long *) = (long)data.counter;
+                break;
+              case INT_LEN_LONG_LONG:
+                *va_arg(args, long long *) = (long long)data.counter;
+                break;
+              default:
+                *va_arg(args, int *) = (int)data.counter;
+                break;
+            }
             is_continue = 0;
             break;
 

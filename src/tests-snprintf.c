@@ -764,6 +764,40 @@ MU_TEST(test_counters) {
 	mu_assert_int_eq(11, counter2);
 }
 
+MU_TEST(test_counter_length_modifiers) {
+	struct {
+		signed char value;
+		unsigned char canary[4];
+	} hh = {0, {0xA5, 0xA5, 0xA5, 0xA5}};
+	struct {
+		short value;
+		unsigned char canary[4];
+	} h = {0, {0xA5, 0xA5, 0xA5, 0xA5}};
+	long l = -1;
+	long long ll = -1;
+	int ret = snprintf(msg, sizeof(msg), "abc%hhn", &hh.value);
+	TEST(3, "abc", ret);
+	mu_assert_int_eq(3, hh.value);
+	for (size_t i = 0; i < sizeof(hh.canary); i++) {
+		mu_assert_int_eq(0xA5, hh.canary[i]);
+	}
+
+	ret = snprintf(msg, sizeof(msg), "abc%hn", &h.value);
+	TEST(3, "abc", ret);
+	mu_assert_int_eq(3, h.value);
+	for (size_t i = 0; i < sizeof(h.canary); i++) {
+		mu_assert_int_eq(0xA5, h.canary[i]);
+	}
+
+	ret = snprintf(msg, sizeof(msg), "abc%ln", &l);
+	TEST(3, "abc", ret);
+	mu_assert_int_eq(3, l);
+
+	ret = snprintf(msg, sizeof(msg), "abc%lln", &ll);
+	TEST(3, "abc", ret);
+	mu_assert_int_eq(3, ll);
+}
+
 
 MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_buffer_null);
@@ -871,6 +905,7 @@ MU_TEST_SUITE(test_suite) {
 
 	MU_RUN_TEST(test_percent);
 	MU_RUN_TEST(test_counters);
+	MU_RUN_TEST(test_counter_length_modifiers);
 }
 
 
