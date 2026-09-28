@@ -306,6 +306,13 @@ MU_TEST(test_int_hex_precision_0) {
 	TEST(5, "0x7b ", ret);
 }
 
+MU_TEST(test_octal_alternative_form) {
+	const char expected[] = "0 0 010 0     0 00000 0001";
+	int ret = snprintf(msg, sizeof(msg), "%o %#o %#o %#.0o %#5o %#05o %#.4o",
+		0u, 0u, 8u, 0u, 0u, 0u, 1u);
+	TEST((int)strlen(expected), expected, ret);
+}
+
 MU_TEST(test_long_dec) {
 	int ret = snprintf(msg, sizeof(msg), "%ld", 123000l);
 	TEST(6, "123000", ret);
@@ -437,6 +444,25 @@ MU_TEST(test_double_g_precision_2_7) {
 	int ret = snprintf(msg, sizeof(msg), "%2.7g %2.7G",
 		1.0 / 123000000.0, 1.0 / 123000000.0);
 	TEST(27, "8.1300813e-09 8.1300813E-09", ret);
+}
+
+MU_TEST(test_double_negative_and_sign_flags) {
+	int ret = snprintf(msg, sizeof(msg), "%f %.2e", -1.25, -12.5);
+	TEST(19, "-1.250000 -1.25e+01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+f % f", 2.25, 2.25);
+	TEST(19, "+2.250000  2.250000", ret);
+}
+
+MU_TEST(test_double_g_boundaries_and_trim) {
+	int ret = snprintf(msg, sizeof(msg), "%g %g %g %g",
+		0.0001, 0.00001, 1.0, 1000000.0);
+	TEST(20, "0.0001 1e-05 1 1e+06", ret);
+}
+
+MU_TEST(test_double_e_rounds_mantissa) {
+	int ret = snprintf(msg, sizeof(msg), "%.6e", 9.9999996);
+	TEST(12, "1.000000e+01", ret);
 }
 
 MU_TEST(test_string_null_pointer) {
@@ -589,6 +615,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_int_hex_uppercase);
 	MU_RUN_TEST(test_int_hex_negative);
 	MU_RUN_TEST(test_int_hex_precision_0);
+	MU_RUN_TEST(test_octal_alternative_form);
 
 	MU_RUN_TEST(test_long_dec);
 	MU_RUN_TEST(test_long_hex);
@@ -615,6 +642,9 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_g);
 	MU_RUN_TEST(test_double_g_precision_0);
 	MU_RUN_TEST(test_double_g_precision_2_7);
+	MU_RUN_TEST(test_double_negative_and_sign_flags);
+	MU_RUN_TEST(test_double_g_boundaries_and_trim);
+	MU_RUN_TEST(test_double_e_rounds_mantissa);
 
 	MU_RUN_TEST(test_string_null_pointer);
 	MU_RUN_TEST(test_string);

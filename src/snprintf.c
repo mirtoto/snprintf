@@ -377,11 +377,11 @@ static int log_10(double r) {
   }
 
   if (r < 1.) {
-    for (; result >= r; i++) {
-      result *= .1;
+    for (; r < 1.; i--) {
+      r *= 10.;
     }
 
-    i = -i;
+    return i;
   } else {
     for (; result <= r; i++) {
       result *= 10.;
@@ -588,8 +588,13 @@ static void octal(struct DATA *p, long long ll) {
 
   inttoa(ll, 0, p->precision, 8, number, sizeof(number));
 
-  if (p->is_square && *number != '\0') {
-    prefix = "0";
+  if (p->is_square) {
+    if (*number == '\0') {
+      number[0] = '0';
+      number[1] = '\0';
+    } else if (*number != '0') {
+      prefix = "0";
+    }
   }
 
   p->width -= (int)strlen(number) + (prefix != NULL ? 1 : 0);
@@ -666,6 +671,7 @@ static void strings(struct DATA *p, const char *s) {
 static void floating(struct DATA *p, double d) {
   char integral[MAX_INTEGRAL_SIZE], *pintegral = integral;
   char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
+  int is_general = *p->pf == 'g' || *p->pf == 'G';
 
   d = ROUND_TO_PRECISION(d, p);
   floattoa(d, p->precision,
@@ -676,11 +682,15 @@ static void floating(struct DATA *p, double d) {
     p->width -= 1;
   }
   p->width -= (int)strlen(integral) + p->precision + 1;
-  if (p->is_plus || p->is_space) {
-    p->width -= 0;
-  }
   if (p->precision == 0) {
     p->width += 1;
+  }
+
+  if (is_general && !p->is_square) {
+    size_t i;
+    for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
+      fraction[i - 1] = '\0';
+    }
   }
   
   PAD_RIGHT(p);
@@ -691,15 +701,9 @@ static void floating(struct DATA *p, double d) {
     PUT_CHAR(*pintegral, p);
   }
 
-  if (p->precision != 0 || p->is_square) { /* put the '.' */
+  if (p->is_square || (p->precision != 0 &&
+      (!is_general || fraction[0] != '\0'))) { /* put the '.' */
     PUT_CHAR('.', p);
-  }
-
-  if (*p->pf == 'g' || *p->pf == 'G') { /* smash the trailing zeros */
-    size_t i;
-    for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
-      fraction[i - 1] = '\0';
-    }
   }
 
   for (; *pfraction != '\0'; pfraction++) {
@@ -717,11 +721,22 @@ static void exponent(struct DATA *p, double d) {
   char integral[MAX_INTEGRAL_SIZE], *pintegral = integral;
   char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
   int log = log_10(d);
+  int is_general = *p->pf == 'g' || *p->pf == 'G';
   d /= pow_10(log); /* get the Mantissa */
   d = ROUND_TO_PRECISION(d, p);
+  if (d >= 10. || d <= -10.) {
+    d /= 10.;
+    log++;
+  }
 
   floattoa(d, p->precision,
     integral, sizeof(integral), fraction, sizeof(fraction));
+  if (is_general && !p->is_square) {
+    size_t i;
+    for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
+      fraction[i - 1] = '\0';
+    }
+  }
   /* 1 for unit, 1 for the '.', 1 for 'e|E',
    * 1 for '+|-', 2 for 'exp' */
   /* calculate how much padding need */
@@ -738,15 +753,9 @@ static void exponent(struct DATA *p, double d) {
     PUT_CHAR(*pintegral, p);
   }
 
-  if (p->precision != 0 || p->is_square) { /* the '.' */
+  if (p->is_square || (p->precision != 0 &&
+      (!is_general || fraction[0] != '\0'))) { /* the '.' */
     PUT_CHAR('.', p);
-  }
-
-  if (*p->pf == 'g' || *p->pf == 'G') { /* smash the trailing zeros */
-    size_t i;
-    for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
-      fraction[i - 1] = '\0';
-    }
   }
   for (; *pfraction != '\0'; pfraction++) {
     PUT_CHAR(*pfraction, p);
@@ -910,7 +919,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             /* use decimal floating point (%f / %F) if exponent is in the range
                [-4,precision] exclusively else use scientific floating
                point (%e / %E) */
-            if (-4 < log && log < data.precision) {
+            if (-4 <= log && log < data.precision) {
               floating(&data, d);
             } else {
               exponent(&data, d);
