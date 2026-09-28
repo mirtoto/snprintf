@@ -39,6 +39,7 @@ static char msg[32] = {0, };
 // These tests intentionally exercise truncation; suppress GCC's format warnings.
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 #pragma GCC diagnostic ignored "-Wformat="
+#pragma GCC diagnostic ignored "-Wformat-extra-args"
 #endif
 
 MU_TEST(test_buffer_null) {
