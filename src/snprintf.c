@@ -88,6 +88,7 @@
  */
 
 #include <ctype.h>
+#include <limits.h>
 #include <string.h>
 
 #include "snprintf.h"
@@ -295,7 +296,11 @@ static void inttoa(long long number, int is_signed, int precision, int base,
     unsigned long long n;
 
     if (is_signed && number < 0) {
-      n = (unsigned long long)-number;
+      if (number == LLONG_MIN) {
+        n = (unsigned long long)LLONG_MAX + 1ULL;
+      } else {
+        n = (unsigned long long)-number;
+      }
       output_size--; /* for '-' character */
     } else {
       n = (unsigned long long)number;
