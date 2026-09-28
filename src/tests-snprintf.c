@@ -572,6 +572,14 @@ MU_TEST(test_double_dynamic_width_and_precision) {
 	TEST(12, "   -1.25e+01", ret);
 }
 
+MU_TEST(test_double_alternate_form_zero_precision_width) {
+	int ret = snprintf(msg, sizeof(msg), "%#12.0f", 3.0);
+	TEST(12, "          3.", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%#12.0e", 3.0);
+	TEST(12, "      3.e+00", ret);
+}
+
 MU_TEST(test_string_null_pointer) {
 	const char *str = NULL;
 	int ret = snprintf(msg, sizeof(msg), "%s", str);
@@ -759,6 +767,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_fraction_buffer_boundary);
 	MU_RUN_TEST(test_double_width_and_zero_padding);
 	MU_RUN_TEST(test_double_dynamic_width_and_precision);
+	MU_RUN_TEST(test_double_alternate_form_zero_precision_width);
 
 	MU_RUN_TEST(test_string_null_pointer);
 	MU_RUN_TEST(test_string);

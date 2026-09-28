@@ -851,9 +851,10 @@ static void conv_flags(struct DATA *p) {
         break;
 
       case '0':
-        p->pad = '0';
         if (p->is_dot) {
           p->precision = 0;
+        } else {
+          p->pad = '0';
         }
         break;
 
