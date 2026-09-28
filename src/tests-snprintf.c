@@ -555,6 +555,17 @@ MU_TEST(test_extreme_format_width_and_precision) {
 	mu_check(buffer.output[7] == '\0');
 	mu_assert_int_eq('X', buffer.canary);
 
+	ret = snprintf(buffer.output, sizeof(buffer.output), "%*s", INT_MAX, "x");
+	mu_assert_int_eq(7, ret);
+	for (size_t i = 0; i < sizeof(buffer.output) - 1; i++) {
+		mu_check(buffer.output[i] == ' ');
+	}
+	mu_check(buffer.output[7] == '\0');
+	mu_assert_int_eq('X', buffer.canary);
+
+	ret = snprintf(NULL, 0, "%*s", INT_MAX, "x");
+	mu_assert_int_eq(INT_MAX, ret);
+
 	const char *dynamic_width_format = "%*s";
 	ret = snprintf(buffer.output, sizeof(buffer.output), dynamic_width_format,
 		INT_MIN, "x");
