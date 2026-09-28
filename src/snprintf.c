@@ -941,13 +941,25 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             int log;
             double d;
             DOUBLE_ARG(&data, d);
+            if (data.precision < 0) {
+              data.precision = 6;
+            } else if (data.precision == 0) {
+              data.precision = 1;
+            }
             log = log_10(d);
+            if (d != 0. && (log == -5 || log == data.precision - 1)) {
+              int rounding_precision = data.precision - log - 1;
+              double half = pow_10(-rounding_precision) * 0.5;
+              log = log_10(d < 0. ? d - half : d + half);
+            }
             /* use decimal floating point (%f / %F) if exponent is in the range
                [-4,precision] exclusively else use scientific floating
                point (%e / %E) */
             if (-4 <= log && log < data.precision) {
+              data.precision -= log + 1;
               floating(&data, d);
             } else {
+              data.precision--;
               exponent(&data, d);
             }
             is_continue = 0;

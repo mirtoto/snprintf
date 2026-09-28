@@ -433,19 +433,27 @@ MU_TEST(test_double_e_precision_2_3) {
 MU_TEST(test_double_g) {
 	int ret = snprintf(msg, sizeof(msg), "%g %G",
 		123.0 + 1.0 / 3, 123.0 + 1.0 / 3);
-	TEST(21, "123.333333 123.333333", ret);
+	TEST(15, "123.333 123.333", ret);
 }
 
 MU_TEST(test_double_g_precision_0) {
 	int ret = snprintf(msg, sizeof(msg), "%.0g %.0G %.0g %.0G",
 		0.0, 0.0, 1.0 / 123000000.0, 1.0 / 123000000.0);
-	TEST(23, "0e+00 0E+00 8e-09 8E-09", ret);
+	TEST(15, "0 0 8e-09 8E-09", ret);
 }
 
 MU_TEST(test_double_g_precision_2_7) {
 	int ret = snprintf(msg, sizeof(msg), "%2.7g %2.7G",
 		1.0 / 123000000.0, 1.0 / 123000000.0);
-	TEST(27, "8.1300813e-09 8.1300813E-09", ret);
+	TEST(25, "8.130081e-09 8.130081E-09", ret);
+}
+
+MU_TEST(test_double_g_alternate_form_and_significant_precision) {
+	int ret = snprintf(msg, sizeof(msg), "%#.6g %#.6G", 1.25, 1.25);
+	TEST(15, "1.25000 1.25000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.3g %.3G", 123.456, 123.456);
+	TEST(7, "123 123", ret);
 }
 
 MU_TEST(test_double_negative_and_sign_flags) {
@@ -460,6 +468,9 @@ MU_TEST(test_double_g_boundaries_and_trim) {
 	int ret = snprintf(msg, sizeof(msg), "%g %g %g %g",
 		0.0001, 0.00001, 1.0, 1000000.0);
 	TEST(20, "0.0001 1e-05 1 1e+06", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.3g %.1g", 999.9, 0.00009999);
+	TEST(12, "1e+03 0.0001", ret);
 }
 
 MU_TEST(test_double_e_rounds_mantissa) {
@@ -757,6 +768,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_g);
 	MU_RUN_TEST(test_double_g_precision_0);
 	MU_RUN_TEST(test_double_g_precision_2_7);
+	MU_RUN_TEST(test_double_g_alternate_form_and_significant_precision);
 	MU_RUN_TEST(test_double_negative_and_sign_flags);
 	MU_RUN_TEST(test_double_g_boundaries_and_trim);
 	MU_RUN_TEST(test_double_e_rounds_mantissa);
