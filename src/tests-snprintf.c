@@ -376,6 +376,19 @@ MU_TEST(test_long_long_dec_max) {
 	mu_check(atoll(msg) == d);
 }
 
+MU_TEST(test_long_long_unsigned_max) {
+	unsigned long long u = ULLONG_MAX;
+	snprintf(msg, sizeof(msg), "%llu", u);
+	char *ptr = NULL;
+	mu_check(strtoull(msg, &ptr, 10) == u);
+}
+
+MU_TEST(test_long_long_unsigned_sign_flags) {
+	unsigned long long u = 1234567890;
+	snprintf(msg, sizeof(msg), "%+llu % llu", u, u);
+	mu_check(strcmp(msg, "1234567890 1234567890") == 0);
+}
+
 MU_TEST(test_long_long_zero_pad_negative) {
 	int ret = snprintf(msg, sizeof(msg), "%020lld", -1LL);
 	TEST(20, "-0000000000000000001", ret);
@@ -913,6 +926,8 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_long_long_dec);
 	MU_RUN_TEST(test_long_long_dec_min);
 	MU_RUN_TEST(test_long_long_dec_max);
+	MU_RUN_TEST(test_long_long_unsigned_max);
+	MU_RUN_TEST(test_long_long_unsigned_sign_flags);
 	MU_RUN_TEST(test_long_long_zero_pad_negative);
 	MU_RUN_TEST(test_long_long_hex_zero_pad_alternative);
 	MU_RUN_TEST(test_long_long_hex);

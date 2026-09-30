@@ -597,7 +597,10 @@ static void floattoa(double number, int precision,
 }
 
 /** Emit a sign prefix before zero-filled numeric output. */
-static void emit_sign_prefix(struct DATA *p, long long value) {
+static void emit_sign_prefix(struct DATA *p, long long value, int is_signed) {
+  if (!is_signed) {
+    return;
+  }
   if (value < 0) {
     PUT_CHAR('-', p);
   } else if (p->is_plus) {
@@ -622,24 +625,27 @@ static void decimal(struct DATA *p, long long ll) {
   const char *digits = number;
   int sign = 0;
 
-  inttoa(ll, *p->pf == 'i' || *p->pf == 'd', p->precision, 10,
+  const int is_signed = (*p->pf == 'i' || *p->pf == 'd') ? 1 : 0;
+  inttoa(ll, is_signed, p->precision, 10,
     number, sizeof(number));
 
-  if (ll < 0) {
-    digits = number + 1;
-    sign = 1;
-  } else if (p->is_plus || p->is_space) {
-    sign = 1;
+  if (is_signed) {
+    if (ll < 0) {
+      digits = number + 1;
+      sign = 1;
+    } else if (p->is_plus || p->is_space) {
+      sign = 1;
+    }
   }
 
   p->width -= (int)strlen(digits) + sign;
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
-    emit_sign_prefix(p, ll);
+    emit_sign_prefix(p, ll, is_signed);
     PUT_REPEAT('0', p, p->width);
     p->width = 0;
   } else {
     PAD_RIGHT(p);
-    emit_sign_prefix(p, ll);
+    emit_sign_prefix(p, ll, is_signed);
   }
 
   for (; *digits != '\0'; digits++) {
