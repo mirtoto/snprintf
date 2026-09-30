@@ -804,6 +804,11 @@ MU_TEST(test_pointer) {
 	TEST(18, "0x12345678aabbccdd", ret);
 }
 
+MU_TEST(test_pointer_width) {
+	int ret = snprintf(msg, sizeof(msg), "%*p", 20, (void *)0x12345678aabbccdd);
+	TEST(20, "  0x12345678aabbccdd", ret);
+}
+
 MU_TEST(test_percent) {
 	const char *str = "%%%%% Hello World! %%%%%";
 	int ret = snprintf(msg, sizeof(msg), "%%%%%%%%%% Hello World! %%%%%%%%%%");
@@ -961,6 +966,7 @@ MU_TEST_SUITE(test_suite) {
 
 	MU_RUN_TEST(test_pointer_null);
 	MU_RUN_TEST(test_pointer);
+	MU_RUN_TEST(test_pointer_width);
 
 	MU_RUN_TEST(test_percent);
 	MU_RUN_TEST(test_counters);

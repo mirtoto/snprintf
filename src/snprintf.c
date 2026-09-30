@@ -1155,6 +1155,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             break;
 
           case 'p': { /* pointer */
+            WIDTH_AND_PRECISION_ARGS(&data);
             void *v = va_arg(args, void *);
             data.is_square = 1;
             if (v == NULL) {
