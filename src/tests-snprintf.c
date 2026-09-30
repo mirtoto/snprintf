@@ -963,6 +963,7 @@ MU_TEST_SUITE(test_suite) {
 
 	MU_RUN_TEST(test_strings);
 	MU_RUN_TEST(test_chars);
+	MU_RUN_TEST(test_char_width_and_alignment);
 
 	MU_RUN_TEST(test_pointer_null);
 	MU_RUN_TEST(test_pointer);
