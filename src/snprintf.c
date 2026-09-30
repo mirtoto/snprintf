@@ -237,7 +237,7 @@ struct DATA {
 #define PAD_LEFT(p)                                     \
   do {                                                  \
     if ((p)->width > 0 && (p)->align == ALIGN_LEFT) {   \
-      PUT_REPEAT((p)->pad, p, (p)->width);              \
+      PUT_REPEAT(' ', p, (p)->width);              \
       (p)->width = 0;                                   \
     }                                                   \
   } while (0)

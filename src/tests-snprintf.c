@@ -256,8 +256,8 @@ MU_TEST(test_int_dec_width_31_and_0_padded) {
 }
 
 MU_TEST(test_int_dec_width_31_and_align_left) {
-	int ret = snprintf(msg, sizeof(msg), "%-31d", 123);
-	TEST(31, "123                            ", ret);
+	int ret = snprintf(msg, sizeof(msg), "%-5d|%-05d", 123, 123);
+	TEST(11, "123  |123  ", ret);
 }
 
 MU_TEST(test_int_dec_width_2) {
