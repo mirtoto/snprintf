@@ -783,6 +783,17 @@ MU_TEST(test_chars) {
 	TEST(5, "Hello", ret);
 }
 
+MU_TEST(test_char_width_and_alignment) {
+	int ret = snprintf(msg, sizeof(msg), "%4c %-4c", 'A', 'B');
+	TEST(9, "   A B   ", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*c", 3, 'C');
+	TEST(3, "  C", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*c", -3, 'D');
+	TEST(3, "D  ", ret);
+}
+
 MU_TEST(test_pointer_null) {
 	int ret = snprintf(msg, sizeof(msg), "%p", (void *)0);
 	TEST(5, "(nil)", ret);

@@ -1128,8 +1128,16 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           }
 
           case 'c': { /* single character */
-            int i = va_arg(args, int);
+            int i;
+            char pad = data.pad;
+            WIDTH_AND_PRECISION_ARGS(&data);
+            i = va_arg(args, int);
+            data.width--;
+            data.pad = ' ';
+            PAD_RIGHT(&data);
             PUT_CHAR((char)i, &data);
+            PAD_LEFT(&data);
+            data.pad = pad;
             is_continue = 0;
             break;
           }
