@@ -183,6 +183,17 @@ MU_TEST(test_malformed_format_standard_like) {
 }
 #endif
 
+MU_TEST(test_int_dec_width_31_and_align_left) {
+	int ret = snprintf(msg, sizeof(msg), "%-5d|%-05d", 123, 123);
+	TEST(11, "123  |123  ", ret);
+}
+
+MU_TEST(test_long_long_unsigned_sign_flags) {
+	unsigned long long u = 1234567890;
+	snprintf(msg, sizeof(msg), "%+llu % llu", u, u);
+	mu_check(strcmp(msg, "1234567890 1234567890") == 0);
+}
+
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
@@ -254,11 +265,6 @@ MU_TEST(test_int_dec_width_10) {
 MU_TEST(test_int_dec_width_31_and_0_padded) {
 	int ret = snprintf(msg, sizeof(msg), "%031d", 123);
 	TEST(31, "0000000000000000000000000000123", ret);
-}
-
-MU_TEST(test_int_dec_width_31_and_align_left) {
-	int ret = snprintf(msg, sizeof(msg), "%-5d|%-05d", 123, 123);
-	TEST(11, "123  |123  ", ret);
 }
 
 MU_TEST(test_int_dec_width_2) {
@@ -382,12 +388,6 @@ MU_TEST(test_long_long_unsigned_max) {
 	snprintf(msg, sizeof(msg), "%llu", u);
 	char *ptr = NULL;
 	mu_check(strtoull(msg, &ptr, 10) == u);
-}
-
-MU_TEST(test_long_long_unsigned_sign_flags) {
-	unsigned long long u = 1234567890;
-	snprintf(msg, sizeof(msg), "%+llu % llu", u, u);
-	mu_check(strcmp(msg, "1234567890 1234567890") == 0);
 }
 
 MU_TEST(test_long_long_zero_pad_negative) {
