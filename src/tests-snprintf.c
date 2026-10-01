@@ -1,5 +1,6 @@
 // Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
 #include <limits.h>
+#include <stdint.h>
 #include <float.h>
 #include <math.h>
 #include <stdlib.h>
@@ -754,8 +755,9 @@ MU_TEST(test_string_with_less_than_input_precision_equal_width) {
 }
 
 MU_TEST(test_string_width_as_parameter) {
+	// a lone '.' means precision 0, so only the padding is printed
 	int ret = snprintf(msg, sizeof(msg), "%-*.s%*.s!", 10, "Hello", 10, "World");
-	TEST(21, "Hello          World!", ret);
+	TEST(21, "                    !", ret);
 }
 
 MU_TEST(test_string_precision_as_parameter) {
@@ -813,8 +815,14 @@ MU_TEST(test_pointer_null) {
 }
 
 MU_TEST(test_pointer) {
-	int ret = snprintf(msg, sizeof(msg), "%p", (void *)0x12345678aabbccdd);
-	TEST(18, "0x12345678aabbccdd", ret);
+#if UINTPTR_MAX > 0xffffffffu
+    int ret = snprintf(msg, sizeof(msg), "%p", (void *)0x12345678aabbccdd);
+    TEST(18, "0x12345678aabbccdd", ret);
+#else
+    // the high bit must not be sign-extended to 64 bits
+    int ret = snprintf(msg, sizeof(msg), "%p", (void *)0x9abcdef0u);
+    TEST(10, "0x9abcdef0", ret);
+#endif
 }
 
 MU_TEST(test_pointer_width) {
@@ -827,6 +835,134 @@ MU_TEST(test_percent) {
 	int ret = snprintf(msg, sizeof(msg), "%%%%%%%%%% Hello World! %%%%%%%%%%");
 	TEST((int)strlen(str), str, ret);
 }
+
+#if defined(__clang__)
+#pragma clang diagnostic push
+// These tests intentionally use flags that the compiler's format check dislikes.
+#pragma clang diagnostic ignored "-Wformat"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat"
+#endif
+
+MU_TEST(test_unsigned_long_long_max) {
+	int ret = snprintf(msg, sizeof(msg), "%llu", ULLONG_MAX);
+	mu_check(ret > 0);
+	mu_check(msg[0] != '-');
+	mu_check(strtoull(msg, NULL, 10) == ULLONG_MAX);
+
+	ret = snprintf(msg, sizeof(msg), "%llu", 9223372036854775808ULL);
+	TEST(19, "9223372036854775808", ret);
+}
+
+MU_TEST(test_unsigned_long_max) {
+	int ret = snprintf(msg, sizeof(msg), "%lu", ULONG_MAX);
+	mu_check(ret > 0);
+	mu_check(msg[0] != '-');
+	mu_check(strtoul(msg, NULL, 10) == ULONG_MAX);
+}
+
+MU_TEST(test_unsigned_ignores_plus_and_space_flags) {
+	int ret = snprintf(msg, sizeof(msg), "%+u % u %+x", 5u, 5u, 5u);
+	TEST(5, "5 5 5", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+d % d", 5, 5);
+	TEST(5, "+5  5", ret);
+}
+
+MU_TEST(test_pointer_dynamic_width) {
+	void *p = (void *)0x1234;
+	int ret = snprintf(msg, sizeof(msg), "[%*p]%d", 12, p, 7);
+	TEST(15, "[      0x1234]7", ret);
+
+	ret = snprintf(msg, sizeof(msg), "[%-*p]%d", 12, p, 7);
+	TEST(15, "[0x1234      ]7", ret);
+
+	ret = snprintf(msg, sizeof(msg), "[%*p]%d", -12, p, 7);
+	TEST(15, "[0x1234      ]7", ret);
+}
+
+MU_TEST(test_left_align_ignores_zero_flag) {
+	int ret = snprintf(msg, sizeof(msg), "%-05d|%0*d|%-05x|%-08.3f",
+		12, -5, 12, 255u, 1.5);
+	TEST(26, "12   |12   |ff   |1.500   ", ret);
+}
+
+MU_TEST(test_lone_dot_is_precision_zero) {
+	int ret = snprintf(msg, sizeof(msg), "%.s|%.d|%.d|%.f|%.x",
+		"Hello", 0, 7, 1.5, 0u);
+	TEST(6, "||7|2|", ret);
+}
+
+MU_TEST(test_hex_alternative_form_of_zero) {
+	int ret = snprintf(msg, sizeof(msg), "%#x %#X %#llx %#o",
+		0u, 0u, 0ull, 0u);
+	TEST(7, "0 0 0 0", ret);
+}
+
+MU_TEST(test_zero_flag_ignored_with_integer_precision) {
+	int ret = snprintf(msg, sizeof(msg), "%08.3d|%08.3u|%08.3x",
+		12, 12u, 255u);
+	TEST(26, "     012|     012|     0ff", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%08.3d", -12);
+	TEST(8, "    -012", ret);
+}
+
+#ifndef SNPRINTF_STRICT
+MU_TEST(test_zero_flag_on_string_pads_with_blanks) {
+	int ret = snprintf(msg, sizeof(msg), "%05s|%05.1s", "ab", "xyz");
+	TEST(11, "   ab|    x", ret);
+}
+#endif
+
+MU_TEST(test_size_ptrdiff_and_intmax_lengths) {
+	int ret = snprintf(msg, sizeof(msg), "%zu|%td|%jd|%zx|%d",
+		(size_t)42, (ptrdiff_t)-7, (intmax_t)123456789012LL, (size_t)255, 9);
+	TEST(23, "42|-7|123456789012|ff|9", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%zu", (size_t)SIZE_MAX);
+	mu_check(msg[0] != '-');
+	mu_check(strtoull(msg, NULL, 10) == (unsigned long long)SIZE_MAX);
+}
+
+MU_TEST(test_double_large_integer_values_are_exact) {
+	int ret = snprintf(msg, sizeof(msg), "%.0f", 171798714241.0);
+	TEST(12, "171798714241", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 123456789012345678.0);
+	TEST(18, "123456789012345680", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", -123456789012345678.0);
+	TEST(19, "-123456789012345680", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 9007199254740993.0);
+	TEST(16, "9007199254740992", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 4503599627370497.0);
+	TEST(16, "4503599627370497", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 1e22);
+	TEST(23, "10000000000000000000000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 1e23);
+	TEST(23, "99999999999999991611392", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 18446744073709551616.0);
+	TEST(20, "18446744073709551616", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 1180591620717411303424.0);
+	TEST(22, "1180591620717411303424", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%f", 1099511627776.25);
+	TEST(20, "1099511627776.250000", ret);
+}
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 MU_TEST(test_counters) {
 	int counter1 = 0, counter2 = 0;
@@ -987,6 +1123,20 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_percent);
 	MU_RUN_TEST(test_counters);
 	MU_RUN_TEST(test_counter_length_modifiers);
+
+	MU_RUN_TEST(test_unsigned_long_long_max);
+	MU_RUN_TEST(test_unsigned_long_max);
+	MU_RUN_TEST(test_unsigned_ignores_plus_and_space_flags);
+	MU_RUN_TEST(test_pointer_dynamic_width);
+	MU_RUN_TEST(test_left_align_ignores_zero_flag);
+	MU_RUN_TEST(test_lone_dot_is_precision_zero);
+	MU_RUN_TEST(test_hex_alternative_form_of_zero);
+	MU_RUN_TEST(test_zero_flag_ignored_with_integer_precision);
+#ifndef SNPRINTF_STRICT
+	MU_RUN_TEST(test_zero_flag_on_string_pads_with_blanks);
+#endif
+	MU_RUN_TEST(test_size_ptrdiff_and_intmax_lengths);
+	MU_RUN_TEST(test_double_large_integer_values_are_exact);
 }
 
 

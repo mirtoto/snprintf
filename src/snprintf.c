@@ -116,6 +116,7 @@
 #include <ctype.h>
 #include <float.h>
 #include <limits.h>
+#include <stdint.h>
 #include <string.h>
 #ifdef SNPRINTF_USE_MATH
 #include <math.h>
@@ -475,9 +476,6 @@ static double integral(double real, double *ip) {
 
   return modf(real, ip);
 #else
-  int log;
-  double real_integral = 0.;
-
   /* equal to zero ? */
   if (real == 0.) {
     *ip = 0.;
@@ -495,16 +493,15 @@ static double integral(double real, double *ip) {
     return real;
   }
 
-  /* the real work :-) */
-  for (log = log_10(real); log >= 0; log--) {
-    double i = 0., p = pow_10(log);
-    double s = (real - real_integral) / p;
-    for (; i + 1. <= s; i++) {}
-    real_integral += i * p;
+  /* from 2^52 on every double is integral already */
+  if (real >= 4503599627370496.) {
+    *ip = real;
+    return 0.;
   }
 
-  *ip = real_integral;
-  return (real - real_integral);
+  /* the real work :-) */
+  *ip = (double)(unsigned long long)real; /* truncation is exact */
+  return (real - *ip);
 #endif
 }
 
@@ -514,6 +511,77 @@ static double integral(double real, double *ip) {
 #define MAX_FRACTION_SIZE (29 + 1)
 /** Precision. */
 #define PRECISION (1.e-6)
+
+/** Base of the limbs used by integer_digits(): 9 decimal digits each. */
+#define INTEGER_LIMB_BASE 1000000000UL
+/** Number of limbs used by integer_digits(): enough for MAX_INTEGRAL_SIZE. */
+#define INTEGER_LIMBS 12
+
+/**
+ * Convert the non-negative, integral @p value to decimal digits without any
+ * loss of precision. The digits are stored least significant first, without
+ * a terminating '\0'.
+ *
+ * Values below 2^64 are converted with integer arithmetic. Bigger values are
+ * a 64-bit integer multiplied by a power of two (exact for a double), which
+ * is done on a small array of base 10^9 limbs.
+ *
+ * @return Number of digits (at least 1), or 0 if @p value needs more than
+ *         @p size digits.
+ */
+static size_t integer_digits(double value, char *output, size_t size) {
+  unsigned long limbs[INTEGER_LIMBS];
+  unsigned long long n;
+  size_t used = 0, count = 0, i;
+  int shift = 0;
+
+  while (value >= 18446744073709551616.) { /* 2^64 */
+    value /= 2.; /* exact, only the exponent changes */
+    shift++;
+  }
+  n = (unsigned long long)value;
+
+  do {
+    limbs[used++] = (unsigned long)(n % INTEGER_LIMB_BASE);
+    n /= INTEGER_LIMB_BASE;
+  } while (n != 0);
+
+  for (; shift > 0; shift--) { /* multiply by two */
+    unsigned long carry = 0;
+    for (i = 0; i < used; i++) {
+      unsigned long v = limbs[i] * 2UL + carry;
+      carry = v >= INTEGER_LIMB_BASE;
+      limbs[i] = carry ? v - INTEGER_LIMB_BASE : v;
+    }
+    if (carry) {
+      if (used == INTEGER_LIMBS) {
+        return 0;
+      }
+      limbs[used++] = 1;
+    }
+  }
+
+  for (i = 0; i < used; i++) {
+    unsigned long v = limbs[i];
+    int digits;
+    for (digits = 0; digits < 9; digits++) {
+      if (i == used - 1 && v == 0) { /* no leading zeros */
+        break;
+      }
+      if (count == size) {
+        return 0;
+      }
+      output[count++] = (char)('0' + v % 10);
+      v /= 10;
+    }
+  }
+
+  if (count == 0) {
+    output[count++] = '0';
+  }
+
+  return count;
+}
 
 /**
  * Return an ASCII representation of the integral and fraction
@@ -544,25 +612,11 @@ static void floattoa(double number, int precision,
   }
 
   fraction = integral(number, &ip);
-  number = ip;
   /* do the integral part */
-  if (ip == 0.) {
-    output_integral[0] = '0';
-    i = 1;
-  } else {
-    for (i = 0; i < output_integral_size - 1 && number != 0.; ++i) {
-      number /= 10;
-      /* force to round */
-      output_integral[i] = (char)((integral(number, &ip) + PRECISION) * 10) + '0';
-      if (!isdigit(output_integral[i])) { /* bail out overflow !! */
-        break;
-      }
-      number = ip;
-    }
-  }
+  i = integer_digits(ip, output_integral, output_integral_size - 1);
 
   /* Oh No !! out of bound, ho well fill it up ! */
-  if (number != 0.) {
+  if (i == 0) {
     for (i = 0; i < output_integral_size - 1; ++i) {
       output_integral[i] = '9';
     }
@@ -597,11 +651,8 @@ static void floattoa(double number, int precision,
 }
 
 /** Emit a sign prefix before zero-filled numeric output. */
-static void emit_sign_prefix(struct DATA *p, long long value, int is_signed) {
-  if (!is_signed) {
-    return;
-  }
-  if (value < 0) {
+static void emit_sign_prefix(struct DATA *p, int is_negative) {
+  if (is_negative) {
     PUT_CHAR('-', p);
   } else if (p->is_plus) {
     PUT_CHAR('+', p);
@@ -623,29 +674,35 @@ static void emit_format_prefix(struct DATA *p, const char *prefix) {
 static void decimal(struct DATA *p, long long ll) {
   char number[MAX_INTEGRAL_SIZE];
   const char *digits = number;
+  const int is_signed = *p->pf == 'i' || *p->pf == 'd';
+  const int is_negative = is_signed && ll < 0;
   int sign = 0;
 
-  const int is_signed = (*p->pf == 'i' || *p->pf == 'd') ? 1 : 0;
-  inttoa(ll, is_signed, p->precision, 10,
-    number, sizeof(number));
+  inttoa(ll, is_signed, p->precision, 10, number, sizeof(number));
 
-  if (is_signed) {
-    if (ll < 0) {
-      digits = number + 1;
-      sign = 1;
-    } else if (p->is_plus || p->is_space) {
-      sign = 1;
-    }
+  if (p->precision >= 0) { /* the '0' flag is ignored when precision is given */
+    p->pad = ' ';
+  }
+
+  if (is_negative) {
+    digits = number + 1;
+    sign = 1;
+  } else if (is_signed && (p->is_plus || p->is_space)) {
+    sign = 1; /* '+' and ' ' apply to signed conversions only */
   }
 
   p->width -= (int)strlen(digits) + sign;
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
-    emit_sign_prefix(p, ll, is_signed);
+    if (sign) {
+      emit_sign_prefix(p, is_negative);
+    }
     PUT_REPEAT('0', p, p->width);
     p->width = 0;
   } else {
     PAD_RIGHT(p);
-    emit_sign_prefix(p, ll, is_signed);
+    if (sign) {
+      emit_sign_prefix(p, is_negative);
+    }
   }
 
   for (; *digits != '\0'; digits++) {
@@ -661,6 +718,10 @@ static void octal(struct DATA *p, long long ll) {
   const char *prefix = NULL;
 
   inttoa(ll, 0, p->precision, 8, number, sizeof(number));
+
+  if (p->precision >= 0) { /* the '0' flag is ignored when precision is given */
+    p->pad = ' ';
+  }
 
   if (p->is_square) {
     if (*number == '\0') {
@@ -695,7 +756,11 @@ static void hex(struct DATA *p, long long ll) {
 
   inttoa(ll, 0, p->precision, 16, number, sizeof(number));
 
-  if (p->is_square && *number != '\0') {
+  if (p->precision >= 0) { /* the '0' flag is ignored when precision is given */
+    p->pad = ' ';
+  }
+
+  if (p->is_square && ll != 0) { /* no "0x" prefix for a zero value */
     prefix = *p->pf == 'p' ? "0x" : (*p->pf == 'X' ? "0X" : "0x");
   }
 
@@ -723,6 +788,8 @@ static void strings(struct DATA *p, const char *s) {
   size_t padding = 0;
   size_t available;
   size_t copy_length;
+
+  p->pad = ' '; /* the '0' flag is undefined for strings; libc pads with blanks */
 
   if (p->precision >= 0) {
     while (len < (size_t)p->precision && src[len] != '\0') {
@@ -797,7 +864,9 @@ static void floating(struct DATA *p, double d) {
   int is_general = *p->pf == 'g' || *p->pf == 'G';
   int has_dot;
 
-  d = ROUND_TO_PRECISION(d, p);
+  if (d < 4503599627370496. && d > -4503599627370496.) { /* 2^52: nothing to round */
+    d = ROUND_TO_PRECISION(d, p);
+  }
   floattoa(d, p->precision,
     integral, sizeof(integral), fraction, sizeof(fraction));
 
@@ -973,6 +1042,7 @@ static void conv_flags(struct DATA *p) {
           p->width = 0;
         }
         p->is_dot = 1;
+        p->precision = 0; /* a lone '.' means precision 0 */
         break;
 
       case '0':
@@ -1167,7 +1237,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             if (v == NULL) {
               strings(&data, "(nil)");
             } else {
-              hex(&data, (long long)v);
+              hex(&data, (long long)(uintptr_t)v); /* no sign extension */
             }
             is_continue = 0;
             break;
@@ -1208,6 +1278,20 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             } else {
               data.a_long = INT_LEN_SHORT;
             }
+            break;
+
+          case 'z': /* size_t / ssize_t */
+            data.a_long = sizeof(size_t) <= sizeof(int) ? INT_LEN_DEFAULT :
+              sizeof(size_t) <= sizeof(long) ? INT_LEN_LONG : INT_LEN_LONG_LONG;
+            break;
+
+          case 't': /* ptrdiff_t */
+            data.a_long = sizeof(ptrdiff_t) <= sizeof(int) ? INT_LEN_DEFAULT :
+              sizeof(ptrdiff_t) <= sizeof(long) ? INT_LEN_LONG : INT_LEN_LONG_LONG;
+            break;
+
+          case 'j': /* intmax_t / uintmax_t */
+            data.a_long = INT_LEN_LONG_LONG;
             break;
 
           case '%': /* nothing just % */
