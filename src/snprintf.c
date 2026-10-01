@@ -215,13 +215,13 @@ struct DATA {
 
 /** Put an optional '+' sign in the output buffer when the flag is set. */
 #define PUT_PLUS(d, p)                                  \
-  if ((d) > 0 && (p)->is_plus) {                        \
+  if ((d) >= 0 && (p)->is_plus) {                       \
     PUT_CHAR('+', p);                                   \
   }
 
 /** Put an optional leading space if the number is positive and the flag is set. */
 #define PUT_SPACE(d, p)                                 \
-  if ((p)->is_space && (d) > 0) {                       \
+  if ((p)->is_space && !(p)->is_plus && (d) >= 0) {     \
     PUT_CHAR(' ', p);                                   \
   }
 
@@ -583,26 +583,109 @@ static size_t integer_digits(double value, char *output, size_t size) {
   return count;
 }
 
+/** Number of 32-bit limbs used by fraction_digits(): 192 bits. */
+#define FRACTION_LIMBS 6
+
+/**
+ * Generate @p count decimal digits of the fraction @p value, without any loss
+ * of precision, and tell how the rest of the fraction compares to one half.
+ *
+ * A double is an integer times a power of two, so the fraction is converted
+ * with integer arithmetic: it becomes a fixed point number with 192 fractional
+ * bits, and every digit is the carry out of multiplying that number by ten.
+ * A fraction below 1e-31 is not worth the effort: its digits (at most 29) are
+ * all zero and it never rounds up.
+ *
+ * @param value Fraction to convert, 0 <= @p value < 1.
+ * @param count Number of digits to generate, at most 29.
+ * @param output Buffer for @p count digits, without a terminating '\0'.
+ *
+ * @retval 0 The rest of the fraction is below one half.
+ * @retval 1 The rest of the fraction is exactly one half.
+ * @retval 2 The rest of the fraction is above one half.
+ */
+static int fraction_digits(double value, size_t count, char *output) {
+  uint32_t limbs[FRACTION_LIMBS];
+  unsigned long long mantissa;
+  size_t i, j, words;
+  int scale = 52;
+  int shift, bits;
+
+  if (value < 1.e-31) {
+    for (i = 0; i < count; i++) {
+      output[i] = '0';
+    }
+    return 0;
+  }
+
+  /* value = mantissa * 2^-scale, with 2^52 <= mantissa < 2^53 */
+  while (value < 1.) {
+    value *= 2.; /* exact, only the exponent changes */
+    scale++;
+  }
+  mantissa = (unsigned long long)(value * 4503599627370496.); /* 2^52 */
+
+  /* limbs = mantissa * 2^(192 - scale), the least significant limb first */
+  shift = FRACTION_LIMBS * 32 - scale;
+  words = (size_t)shift / 32;
+  bits = shift % 32;
+  for (i = 0; i < FRACTION_LIMBS; i++) {
+    limbs[i] = 0;
+  }
+  limbs[0] = (uint32_t)(mantissa & 0xffffffffUL);
+  limbs[1] = (uint32_t)(mantissa >> 32);
+  for (i = FRACTION_LIMBS; i-- > 0;) {
+    uint32_t v = 0;
+    if (i >= words) {
+      v = limbs[i - words] << bits;
+      if (bits != 0 && i > words) {
+        v |= limbs[i - words - 1] >> (32 - bits);
+      }
+    }
+    limbs[i] = v;
+  }
+
+  for (i = 0; i < count; i++) {
+    unsigned long long carry = 0;
+    for (j = 0; j < FRACTION_LIMBS; j++) { /* multiply by ten */
+      unsigned long long v = (unsigned long long)limbs[j] * 10U + carry;
+      limbs[j] = (uint32_t)v;
+      carry = v >> 32;
+    }
+    output[i] = (char)('0' + carry);
+  }
+
+  /* what is left is compared to one half, that is 2^191 */
+  if (limbs[FRACTION_LIMBS - 1] != 0x80000000UL) {
+    return limbs[FRACTION_LIMBS - 1] > 0x80000000UL ? 2 : 0;
+  }
+  for (j = 0; j < FRACTION_LIMBS - 1; j++) {
+    if (limbs[j] != 0) {
+      return 2;
+    }
+  }
+
+  return 1;
+}
+
 /**
  * Return an ASCII representation of the integral and fraction
  * part of the @p number.
+ *
+ * The digits are those of the exact binary value of @p number. When @p round
+ * is set the result is rounded to @p precision digits to nearest, ties to
+ * even, like the C library does. Otherwise the extra digits are dropped.
  */
-static void floattoa(double number, int precision,
+static void floattoa(double number, int precision, int round,
     char *output_integral, size_t output_integral_size,
     char *output_fraction, size_t output_fraction_size) {
 
   size_t i, j;
+  size_t digits;
   int is_negative = 0;
-  double ip, fp; /* integer and fraction part */
+  int rest;
+  double ip;
   double fraction;
-
-  /* taking care of the obvious case: 0.0 */
-  if (number == 0.) {
-    output_integral[0] = output_fraction[0] = '0';
-    output_integral[1] = output_fraction[1] = '\0';
-
-    return;
-  }
 
   /* for negative numbers */
   if (number < 0.) {
@@ -622,6 +705,45 @@ static void floattoa(double number, int precision,
     }
   }
 
+  /* the fractional part */
+  digits = precision > 0 ? (size_t)precision : 0;
+  if (digits > output_fraction_size - 1) {
+    digits = output_fraction_size - 1;
+  }
+  rest = fraction_digits(fraction, digits, output_fraction);
+  output_fraction[digits] = '\0';
+
+  /* round to nearest, ties to even */
+  if (round && (rest == 2 || (rest == 1 &&
+      (digits > 0 ? output_fraction[digits - 1] : output_integral[0]) % 2 != 0))) {
+    int carry = 1;
+    for (j = digits; carry && j > 0; j--) {
+      if (output_fraction[j - 1] == '9') {
+        output_fraction[j - 1] = '0';
+      } else {
+        output_fraction[j - 1]++;
+        carry = 0;
+      }
+    }
+    for (j = 0; carry && j < i; j++) {
+      if (output_integral[j] == '9') {
+        output_integral[j] = '0';
+      } else {
+        output_integral[j]++;
+        carry = 0;
+      }
+    }
+    if (carry) {
+      if (i < output_integral_size - 1) {
+        output_integral[i++] = '1';
+      } else { /* no room for one more digit, stay at the biggest value */
+        for (j = 0; j < i; j++) {
+          output_integral[j] = '9';
+        }
+      }
+    }
+  }
+
   /* put the sign ? */
   if (is_negative) {
     output_integral[i++] = '-';
@@ -635,19 +757,6 @@ static void floattoa(double number, int precision,
     output_integral[i] = output_integral[j];
     output_integral[j] = tmp;
   }
-
-  /* the fractional part */
-  for (i = 0, fp = fraction; precision > 0 && i < output_fraction_size - 1; i++, precision--) {
-    double scaled = fp * 10.;
-    int digit = (int)scaled;
-    output_fraction[i] = (char)digit + '0';
-    if (!isdigit(output_fraction[i])) { /* underflow ? */
-      break;
-    }
-
-    fp = scaled - digit;
-  }
-  output_fraction[i] = '\0';
 }
 
 /** Emit a sign prefix before zero-filled numeric output. */
@@ -864,10 +973,7 @@ static void floating(struct DATA *p, double d) {
   int is_general = *p->pf == 'g' || *p->pf == 'G';
   int has_dot;
 
-  if (d < 4503599627370496. && d > -4503599627370496.) { /* 2^52: nothing to round */
-    d = ROUND_TO_PRECISION(d, p);
-  }
-  floattoa(d, p->precision,
+  floattoa(d, p->precision, 1,
     integral, sizeof(integral), fraction, sizeof(fraction));
 
   if (is_general && !p->is_square) {
@@ -879,7 +985,7 @@ static void floating(struct DATA *p, double d) {
   has_dot = p->is_square || (p->precision != 0 &&
       (!is_general || fraction[0] != '\0'));
   p->width -= (int)strlen(integral) + (int)strlen(fraction) + has_dot;
-  if (d > 0. && (p->is_plus || p->is_space)) {
+  if (d >= 0. && (p->is_plus || p->is_space)) {
     p->width -= 1;
   }
   
@@ -937,7 +1043,7 @@ static void exponent(struct DATA *p, double d) {
     log++;
   }
 
-  floattoa(d, p->precision,
+  floattoa(d, p->precision, 0,
     integral, sizeof(integral), fraction, sizeof(fraction));
   if (is_general && !p->is_square) {
     size_t i;

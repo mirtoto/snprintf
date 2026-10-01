@@ -958,6 +958,94 @@ MU_TEST(test_double_large_integer_values_are_exact) {
 	TEST(20, "1099511627776.250000", ret);
 }
 
+MU_TEST(test_double_fraction_digits_are_exact) {
+	int ret;
+
+	ret = snprintf(msg, sizeof(msg), "%.2f", 1.005);
+	TEST(4, "1.00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.2f", 2.675);
+	TEST(4, "2.67", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.2f", 0.995);
+	TEST(4, "0.99", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.2f", 0.125);
+	TEST(4, "0.12", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 0.5);
+	TEST(1, "0", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 1.5);
+	TEST(1, "2", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 2.5);
+	TEST(1, "2", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 3.5);
+	TEST(1, "4", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.1f", 0.25);
+	TEST(3, "0.2", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.1f", 0.35);
+	TEST(3, "0.3", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.1f", 0.05);
+	TEST(3, "0.1", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.3f", 1.0005);
+	TEST(5, "1.000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.6f", 674494634688.05493);
+	TEST(19, "674494634688.054932", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.2f", 34593980428896.605);
+	TEST(17, "34593980428896.61", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.20f", 0.1);
+	TEST(22, "0.10000000000000000555", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.6f", 0.9999996);
+	TEST(8, "1.000000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.2f", 9.995);
+	TEST(4, "9.99", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", 999999.5);
+	TEST(7, "1000000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.2f", -0.001);
+	TEST(5, "-0.00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.10f", 5e-11);
+	TEST(12, "0.0000000001", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.29f", 1e-30);
+	TEST(31, "0.00000000000000000000000000000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.29f", 0.3);
+	TEST(31, "0.29999999999999998889776975375", ret);
+}
+
+MU_TEST(test_double_sign_flags_of_zero_and_both_flags) {
+	int ret = snprintf(msg, sizeof(msg), "%+f|% f", 0.0, 0.0);
+	TEST(19, "+0.000000| 0.000000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+.0f|% .0f", 0.0, 0.0);
+	TEST(5, "+0| 0", ret);
+
+	// the plus flag overrides the space flag
+	ret = snprintf(msg, sizeof(msg), "% +.1f|%+ .1f", 2.5, 2.5);
+	TEST(9, "+2.5|+2.5", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+ .1f", -2.5);
+	TEST(4, "-2.5", ret);
+
+	ret = snprintf(msg, sizeof(msg), "% +012.2f", 12.5);
+	TEST(12, "+00000012.50", ret);
+}
+
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #elif defined(__GNUC__)
@@ -1137,6 +1225,8 @@ MU_TEST_SUITE(test_suite) {
 #endif
 	MU_RUN_TEST(test_size_ptrdiff_and_intmax_lengths);
 	MU_RUN_TEST(test_double_large_integer_values_are_exact);
+	MU_RUN_TEST(test_double_fraction_digits_are_exact);
+	MU_RUN_TEST(test_double_sign_flags_of_zero_and_both_flags);
 }
 
 
