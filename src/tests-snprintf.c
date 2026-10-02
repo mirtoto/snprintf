@@ -1208,6 +1208,34 @@ MU_TEST(test_double_big_integral_part_is_exact) {
 #pragma GCC diagnostic pop
 #endif
 
+MU_TEST(test_prefix_is_not_skipped_when_buffer_is_null_or_full) {
+	// the 0x, 0 prefixes and inf must be consumed even if they do not fit
+	int ret = snprintf(NULL, 0, "%#x|%#o|%p", 255u, 8u, (void *)0x1234);
+	mu_assert_int_eq(15, ret);
+
+	ret = snprintf(msg, 2, "%#x", 255u);
+	TEST(1, "0", ret);
+
+	ret = snprintf(msg, 3, "%p", (void *)0x1234);
+	TEST(2, "0x", ret);
+
+	ret = snprintf(msg, 2, "%f", INFINITY);
+	TEST(1, "i", ret);
+
+	ret = snprintf(NULL, 0, "%f", -INFINITY);
+	mu_assert_int_eq(4, ret);
+
+	// the sign of a zero padded number is written once, with or without buffer
+	ret = snprintf(NULL, 0, "%012.3f", -1.5);
+	mu_assert_int_eq(12, ret);
+
+	ret = snprintf(NULL, 0, "%+012.2e", -1.5);
+	mu_assert_int_eq(12, ret);
+
+	ret = snprintf(msg, sizeof(msg), "%012.3f", -1.5);
+	TEST(12, "-0000001.500", ret);
+}
+
 MU_TEST(test_counters) {
 	int counter1 = 0, counter2 = 0;
 	int ret = snprintf(msg, sizeof(msg), "%s%n %s%n%c",
@@ -1386,6 +1414,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_e_and_g_digits_are_exact);
 	MU_RUN_TEST(test_double_negative_zero);
 	MU_RUN_TEST(test_double_big_integral_part_is_exact);
+	MU_RUN_TEST(test_prefix_is_not_skipped_when_buffer_is_null_or_full);
 }
 
 

@@ -185,14 +185,21 @@ struct DATA {
   char slop[5];             /**< RFU */
 };
 
-/** Put a @p c character to output buffer if there is enough space. */
+/**
+ * Put a @p c character to output buffer if there is enough space.
+ * The @p c is evaluated once, even when there is no space or no buffer, so it
+ * can have side effects, like PUT_CHAR(*text++, p).
+ */
 #define PUT_CHAR(c, p)                                  \
-  if ((p)->counter < (p)->ps_size) {                    \
-    if ((p)->ps != NULL) {                              \
-      *(p)->ps++ = (c);                                 \
+  do {                                                  \
+    char put_char_value = (char)(c);                    \
+    if ((p)->counter < (p)->ps_size) {                  \
+      if ((p)->ps != NULL) {                            \
+        *(p)->ps++ = put_char_value;                    \
+      }                                                 \
+      (p)->counter++;                                   \
     }                                                   \
-    (p)->counter++;                                     \
-  }
+  } while (0)
 
 #define PUT_REPEAT(c, p, count)                         \
   do {                                                  \
