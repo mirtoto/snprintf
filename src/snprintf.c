@@ -2,7 +2,7 @@
 
 /**
  * Portable snprintf() implementation.
- * @version 3.1
+ * @version 3.2
  *  
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,41 @@
  * 
  * Revision History:
  *
+ * @version 3.2
+ * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - Exact floating-point: %f fractional digits now match glibc
+ *    exactly, with correct rounding; %e and %g are exact too, and
+ *    -0.0 keeps its sign.
+ *  - Full-range doubles: the 99-digit clamp on the integral part is
+ *    gone; finite doubles print all their digits, bounded by the new
+ *    SNPRINTF_FLOAT_INTEGRAL_DIGITS limit (309 by default).
+ *  - Safer integers: %llu and %lu no longer print a stray - and drop
+ *    a digit at or above 2^63; %+u and % u no longer print a sign.
+ *    The integral part is extracted exactly: integer arithmetic below
+ *    2^64, base-10^9 limbs above, without growing the stack, and
+ *    values of 2^52 and above are no longer "rounded" before
+ *    formatting, so odd integers no longer print one too high.
+ *  - Correct flags and precision: %*p now consumes its width
+ *    argument; - together with 0 pads with spaces on the right;
+ *    a lone . means precision 0, so %.s prints nothing; %#x of 0
+ *    prints 0; the 0 flag is ignored when an integer precision is
+ *    given, and %s pads with blanks; left alignment is fixed.
+ *  - New length modifiers: %zu, %td and %jd, with the size picked
+ *    by sizeof, including targets where size_t is 16 bits.
+ *  - No libm dependency: the default and strict builds are
+ *    self-contained; SNPRINTF_USE_MATH opts into <math.h> helpers,
+ *    and the Makefile links -lm only for that backend.
+ *  - Robustness: fixed a hang in the PUT_CHAR macro and compilation
+ *    warnings; %p no longer sign-extends on 32-bit targets (that
+ *    path is untested, as -m32 is not available here).
+ *  - Differential fuzz test: fuzz/ compares the output against the
+ *    C library (make -C fuzz check), and GitHub Actions CI runs gcc
+ *    and clang across default, strict, and math builds with -Werror,
+ *    ASan/UBSan unit tests, and fuzz runs, plus a best-effort
+ *    32-bit job.
+ *  - Expanded tests: char width and alignment, pointer width,
+ *    unsigned maxima, and sign-flag edge cases.
+ * 
  * @version 3.1
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
  *  - Safer %n: Honors hh, h, l, and ll pointer types, preventing 
