@@ -828,8 +828,14 @@ MU_TEST(test_pointer) {
 }
 
 MU_TEST(test_pointer_width) {
+#if UINTPTR_MAX > 0xffffffffu
 	int ret = snprintf(msg, sizeof(msg), "%*p", 20, (void *)0x12345678aabbccdd);
 	TEST(20, "  0x12345678aabbccdd", ret);
+#else
+	// the constant above is truncated to 32 bits on this target
+	int ret = snprintf(msg, sizeof(msg), "%*p", 20, (void *)0x9abcdef0u);
+	TEST(20, "          0x9abcdef0", ret);
+#endif
 }
 
 MU_TEST(test_percent) {
