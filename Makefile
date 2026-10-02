@@ -20,7 +20,10 @@ SOURCEDIRS	:= $(shell find $(SRC) -type d)
 INCLUDEDIRS	:= $(shell find $(INCLUDE) -type d)
 LIBDIRS		:= $(shell find $(LIB) -type d)
 MKDIR		:= mkdir -p
-LIBRARIES	:= -lm
+endif
+# Link libm only when the optional math backend is enabled.
+ifneq ($(filter -DSNPRINTF_USE_MATH,$(CFLAGS)),)
+  LIBRARIES += -lm
 endif
 
 CINCLUDES	:= $(patsubst %,-I%, $(INCLUDEDIRS:%/=%))

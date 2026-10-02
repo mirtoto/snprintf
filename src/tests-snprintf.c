@@ -545,7 +545,9 @@ MU_TEST(test_double_finite_limits) {
 	ret = snprintf(msg, sizeof(msg), "%.6e", DBL_MAX);
 	TEST(13, "1.797693e+308", ret);
 
-	double min_subnormal = nextafter(0.0, 1.0);
+	double min_subnormal;
+	uint64_t subnormal_bits = 1ULL;
+	memcpy(&min_subnormal, &subnormal_bits, sizeof(min_subnormal));
 	ret = snprintf(msg, sizeof(msg), "%.6e", min_subnormal);
 	TEST(13, "4.940656e-324", ret);
 
