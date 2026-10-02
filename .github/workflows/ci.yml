@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.cc }} ${{ matrix.defs || 'default' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        defs: ["", "-DSNPRINTF_STRICT", "-DSNPRINTF_USE_MATH"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile snprintf.c without warnings
+        run: |
+          ${{ matrix.cc }} -std=c99 -Wall -Wextra -Wpedantic -Werror \
+            -DUSE_SNPRINTF_PREFIX ${{ matrix.defs }} -Iinclude \
+            -c src/snprintf.c -o /dev/null
+
+      - name: Unit tests (AddressSanitizer, UndefinedBehaviorSanitizer)
+        run: |
+          main=$(find . -name main.c | head -n 1)
+          ${{ matrix.cc }} -Wall -Wextra -g -O1 \
+            -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+            -DUSE_SNPRINTF_PREFIX ${{ matrix.defs }} -Iinclude \
+            "$main" src/tests-snprintf.c src/snprintf.c -lm -o tests
+          ./tests
+
+      - name: Differential fuzz test against the C library
+        run: make -C fuzz check CC=${{ matrix.cc }} DEFS="${{ matrix.defs }}"
+
+  test-32bit:
+    name: gcc 32 bits ${{ matrix.fp }}
+    runs-on: ubuntu-latest
+    # Nobody has run the 32-bit builds yet. Remove this line when they pass.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        fp: ["-m32", "-m32 -msse2 -mfpmath=sse"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the 32-bit toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+
+      - name: Unit tests
+        run: |
+          main=$(find . -name main.c | head -n 1)
+          gcc -Wall -Wextra -g -O1 ${{ matrix.fp }} \
+            -DUSE_SNPRINTF_PREFIX -Iinclude \
+            "$main" src/tests-snprintf.c src/snprintf.c -lm -o tests
+          ./tests
+
+      - name: Differential fuzz test against the C library
+        run: make -C fuzz check SAN= CFLAGS="-O1 -g ${{ matrix.fp }}"
