@@ -1046,6 +1046,160 @@ MU_TEST(test_double_sign_flags_of_zero_and_both_flags) {
 	TEST(12, "+00000012.50", ret);
 }
 
+MU_TEST(test_double_e_and_g_digits_are_exact) {
+	int ret;
+
+	ret = snprintf(msg, sizeof(msg), "%.0e", 2.5);
+	TEST(5, "2e+00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0e", 0.5);
+	TEST(5, "5e-01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0e", 1.5);
+	TEST(5, "2e+00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0e", 0.25);
+	TEST(5, "2e-01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.1e", 0.125);
+	TEST(7, "1.2e-01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.1e", 0.375);
+	TEST(7, "3.8e-01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.2e", 1.005);
+	TEST(8, "1.00e+00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.3e", 9.9995);
+	TEST(9, "9.999e+00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%e", 1e23);
+	TEST(12, "1.000000e+23", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.20e", 0.1);
+	TEST(26, "1.00000000000000005551e-01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%e", 9.9999995);
+	TEST(12, "9.999999e+00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.20e", 1e100);
+	TEST(27, "1.00000000000000001590e+100", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.20e", 5e-324);
+	TEST(27, "4.94065645841246544177e-324", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.1e", 9.96);
+	TEST(7, "1.0e+01", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%e", 123456789012345678.0);
+	TEST(12, "1.234568e+17", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%g", 123456.5);
+	TEST(6, "123456", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%g", 123457.5);
+	TEST(6, "123458", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.3g", 999.9);
+	TEST(5, "1e+03", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.4g", 9.9996);
+	TEST(2, "10", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0g", 2.5);
+	TEST(1, "2", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.1g", 0.95);
+	TEST(3, "0.9", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.1g", 0.25);
+	TEST(3, "0.2", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%#.3g", -0.99965920105744954);
+	TEST(5, "-1.00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%g", 1e100);
+	TEST(6, "1e+100", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%G", 1e-5);
+	TEST(5, "1E-05", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.29g", 0.1);
+	TEST(31, "0.10000000000000000555111512313", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%g", 0.00012345678);
+	TEST(11, "0.000123457", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.10g", 1234567.8912345);
+	TEST(11, "1234567.891", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%g", 99999.95);
+	TEST(7, "99999.9", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%g", 999999.5);
+	TEST(5, "1e+06", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.2g", 0.000099999);
+	TEST(6, "0.0001", ret);
+}
+
+MU_TEST(test_double_negative_zero) {
+	int ret;
+
+	ret = snprintf(msg, sizeof(msg), "%f", -0.0);
+	TEST(9, "-0.000000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+.1f", -0.0);
+	TEST(4, "-0.0", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%e", -0.0);
+	TEST(13, "-0.000000e+00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%g", -0.0);
+	TEST(2, "-0", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%08.2f", -0.0);
+	TEST(8, "-0000.00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "% .1e", -0.0);
+	TEST(8, "-0.0e+00", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+g", -0.0);
+	TEST(2, "-0", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", -0.0);
+	TEST(2, "-0", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.0f", -0.4);
+	TEST(2, "-0", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%-9.1f|", -0.0);
+	TEST(10, "-0.0     |", ret);
+}
+
+MU_TEST(test_double_big_integral_part_is_exact) {
+	char big[400];
+	int ret = snprintf(big, sizeof(big), "%.0f", 1e100);
+	mu_assert_int_eq(101, ret);
+	mu_assert_string_eq(
+		"1000000000000000015902891109759918046836080856394528138978132755"
+		"7747838772170381060813469985856815104", big);
+
+	ret = snprintf(big, sizeof(big), "%.0f", -DBL_MAX);
+	mu_assert_int_eq(310, ret);
+	mu_assert_string_eq("-"
+		"1797693134862315708145274237317043567980705675258449965989174768"
+		"0315726078002853876058955863276687817154045895351438246423432132"
+		"6889464182768467546703537516986049910576551282076245490090389328"
+		"9440758685084551339423045832369032229481658085593321233482747978"
+		"26204144723168738177180919299881250404026184124858368", big);
+
+	ret = snprintf(big, sizeof(big), "%.2f", DBL_MAX);
+	mu_assert_int_eq(312, ret);
+	mu_check(strncmp(big, "179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368", 309) == 0);
+	mu_assert_string_eq(".00", big + 309);
+}
+
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #elif defined(__GNUC__)
@@ -1227,6 +1381,9 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_large_integer_values_are_exact);
 	MU_RUN_TEST(test_double_fraction_digits_are_exact);
 	MU_RUN_TEST(test_double_sign_flags_of_zero_and_both_flags);
+	MU_RUN_TEST(test_double_e_and_g_digits_are_exact);
+	MU_RUN_TEST(test_double_negative_zero);
+	MU_RUN_TEST(test_double_big_integral_part_is_exact);
 }
 
 
