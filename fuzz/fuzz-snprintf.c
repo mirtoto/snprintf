@@ -21,8 +21,6 @@
  *    next power of ten, the C standard and this implementation do not),
  *  - a precision of a floating-point conversion above 29, and of an integer
  *    conversion above 60,
- *  - the length of a truncated output, which is the number of characters
- *    written here (it is checked against that),
  *  - a NULL string with a precision, the sign of NaN, the character '\0',
  *  - long double, wide characters, %a and %n.
  * The flags the C standard does not define for a conversion are used too, as
@@ -81,7 +79,7 @@ static char value_text[160]; /* the argument of the format, for the report */
 static int check(const char *fmt, ...) {
   char want[BUFFER_SIZE], got[BUFFER_SIZE], cut[BUFFER_SIZE + 16];
   va_list a, b, c, d;
-  int want_len, got_len, null_len, cut_len;
+  int want_len, got_len, null_len, cut_len, expected_cut_len;
   size_t cap, keep, i;
   const char *problem = NULL;
 
@@ -107,11 +105,18 @@ static int check(const char *fmt, ...) {
   va_end(d);
 
   keep = (size_t)want_len < cap - 1 ? (size_t)want_len : cap - 1;
+#ifdef SNPRINTF_LEGACY_LENGTH
+  /* the legacy mode returns the number of characters written, not the length
+     of the whole output */
+  expected_cut_len = (int)keep;
+#else
+  expected_cut_len = want_len;
+#endif
   if (got_len != want_len || strcmp(got, want) != 0) {
     problem = "output";
   } else if (null_len != want_len) {
     problem = "length for a NULL buffer";
-  } else if (cut_len != (int)keep || memcmp(cut, want, keep) != 0 || cut[keep] != '\0') {
+  } else if (cut_len != expected_cut_len || memcmp(cut, want, keep) != 0 || cut[keep] != '\0') {
     problem = "truncated output";
   } else {
     for (i = cap; i < cap + 8; i++) {

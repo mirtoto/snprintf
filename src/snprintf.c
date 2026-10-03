@@ -22,6 +22,14 @@
  *
  * @version 3.2
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - C99 return value: a truncated output is no longer cut off at the
+ *    size of the buffer. The functions return the length of the whole
+ *    output, and %n stores it, like the C library does, so a caller can
+ *    detect a truncation and retry with a bigger buffer. Only the writes
+ *    stay bounded by the buffer, and the whole format is always
+ *    processed. A length over INT_MAX is reported as INT_MAX. Define
+ *    SNPRINTF_LEGACY_LENGTH for the previous result, the number of
+ *    characters written, which is what this code did before.
  *  - Exact floating-point: %f fractional digits now match glibc
  *    exactly, with correct rounding; %e and %g are exact too, and
  *    -0.0 keeps its sign.
@@ -170,7 +178,8 @@
  * of vsnprintf()/snprintf() functions.
  */
 struct DATA {
-  size_t counter;             /**< counter of length of string in DATA::ps */
+  size_t counter;             /**< length of the whole output, written or not */
+  size_t written;             /**< number of characters put into DATA::ps */
   size_t ps_size;             /**< size of DATA::ps - 1 */
   char *ps;                   /**< pointer to output string */
   const char *pf;             /**< pointer to input format string */
@@ -224,22 +233,33 @@ struct DATA {
  * Put a @p c character to output buffer if there is enough space.
  * The @p c is evaluated once, even when there is no space or no buffer, so it
  * can have side effects, like PUT_CHAR(*text++, p).
+ *
+ * DATA::counter always counts the character, DATA::written only when it fits
+ * into the buffer, so that the function returns the length of the whole output
+ * like the C library does, and %n stores that length too.
  */
 #define PUT_CHAR(c, p)                                  \
   do {                                                  \
     char put_char_value = (char)(c);                    \
-    if ((p)->counter < (p)->ps_size) {                  \
+    if ((p)->written < (p)->ps_size) {                  \
       if ((p)->ps != NULL) {                            \
         *(p)->ps++ = put_char_value;                    \
       }                                                 \
-      (p)->counter++;                                   \
+      (p)->written++;                                   \
     }                                                   \
+    (p)->counter++;                                     \
   } while (0)
 
+/**
+ * Put @p count copies of the @p c character to the output buffer if there is
+ * enough space. As in PUT_CHAR(), the whole @p count is counted in
+ * DATA::counter, and only the part that fits is written.
+ */
 #define PUT_REPEAT(c, p, count)                         \
   do {                                                  \
-    size_t repeat_count = (count) > 0 ? (size_t)(count) : 0; \
-    size_t available = (p)->ps_size - (p)->counter;     \
+    size_t repeat_total = (count) > 0 ? (size_t)(count) : 0; \
+    size_t repeat_count = repeat_total;                 \
+    size_t available = (p)->ps_size - (p)->written;     \
     if (repeat_count > available) {                     \
       repeat_count = available;                         \
     }                                                   \
@@ -247,8 +267,22 @@ struct DATA {
       memset((p)->ps, (unsigned char)(c), repeat_count);\
       (p)->ps += repeat_count;                          \
     }                                                   \
-    (p)->counter += repeat_count;                       \
+    (p)->written += repeat_count;                       \
+    (p)->counter += repeat_total;                       \
   } while (0)
+
+/**
+ * The number of characters the function returns and %n stores: the length of
+ * the whole output, like the C library does, or only the number of characters
+ * written into the buffer in the legacy mode of SNPRINTF_LEGACY_LENGTH.
+ */
+static size_t output_count(const struct DATA *p) {
+#ifdef SNPRINTF_LEGACY_LENGTH
+  return p->written;
+#else
+  return p->counter;
+#endif
+}
 
 /** Put an optional '+' sign in the output buffer when the flag is set. */
 #define PUT_PLUS(positive, p)                           \
@@ -1089,13 +1123,14 @@ static void strings(struct DATA *p, const char *s) {
 
   PAD_RIGHT(p);
 
-  available = p->ps_size - p->counter;
+  available = p->ps_size - p->written;
   copy_length = len < available ? len : available;
   if (p->ps != NULL && copy_length > 0) {
     memcpy(p->ps, src, copy_length);
     p->ps += copy_length;
   }
-  p->counter += copy_length;
+  p->written += copy_length;
+  p->counter += len; /* the whole string counts, not only the part written */
 
   PAD_LEFT(p);
 }
@@ -1363,6 +1398,15 @@ static void conv_flags(struct DATA *p) {
   }
 }
 
+/**
+ * The C library returns the length of the whole output as an @c int. An output
+ * longer than @c INT_MAX cannot be told from a negative error, so it is cut to
+ * @c INT_MAX.
+ */
+static int output_length(size_t count) {
+  return count > (size_t)INT_MAX ? INT_MAX : (int)count;
+}
+
 int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, va_list args) {
   struct DATA data;
 
@@ -1378,10 +1422,17 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
   data.ps = string;
   data.pf = format;
   data.counter = 0;
+  data.written = 0;
 
+  /* In the legacy mode nothing more can be written once the buffer is full, so
+     the rest of the format is skipped and %n is not stored any more. The strict
+     mode keeps going, to validate the whole format. Without the legacy mode the
+     whole format is always processed, also when the buffer is full, because the
+     returned length is the length of the whole output and not only of the part
+     that was written. The writes are bounded by DATA::ps_size. */
   for (; *data.pf != '\0'; data.pf++) {
-#ifndef SNPRINTF_STRICT
-    if (data.counter >= data.ps_size) {
+#if defined(SNPRINTF_LEGACY_LENGTH) && !defined(SNPRINTF_STRICT)
+    if (data.written >= data.ps_size) {
       break;
     }
 #endif
@@ -1398,7 +1449,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             if (data.ps != NULL) {
               *data.ps = '\0';
             }
-            return (int)data.counter;
+            return output_length(output_count(&data));
 
           case 'f':
           case 'F': { /* decimal floating point */
@@ -1528,19 +1579,19 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'n': /* Store the output count using the requested integer type. */
             switch (data.a_long) {
               case INT_LEN_CHAR:
-                *va_arg(args, signed char *) = (signed char)data.counter;
+                *va_arg(args, signed char *) = (signed char)output_count(&data);
                 break;
               case INT_LEN_SHORT:
-                *va_arg(args, short *) = (short)data.counter;
+                *va_arg(args, short *) = (short)output_count(&data);
                 break;
               case INT_LEN_LONG:
-                *va_arg(args, long *) = (long)data.counter;
+                *va_arg(args, long *) = (long)output_count(&data);
                 break;
               case INT_LEN_LONG_LONG:
-                *va_arg(args, long long *) = (long long)data.counter;
+                *va_arg(args, long long *) = (long long)output_count(&data);
                 break;
               default:
-                *va_arg(args, int *) = (int)data.counter;
+                *va_arg(args, int *) = (int)output_count(&data);
                 break;
             }
             is_continue = 0;
@@ -1620,7 +1671,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
     *data.ps = '\0'; /* the end ye ! */
   }
 
-  return (int)data.counter;
+  return output_length(output_count(&data));
 }
 
 int SNPRINTF_PREFIX(snprintf)(char *string, size_t length, const char *format, ...) {

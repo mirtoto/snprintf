@@ -33,10 +33,20 @@ int snprintf(char *string, size_t length, const char *format, ...);
 
 | Value  | Meaning                                                                                                                                                  |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `>= 0` | Number of characters written, not counting the terminating null byte, which is `length - 1` when the output is truncated. With a `NULL` `string`, the number of characters of the whole output. |
+| `>= 0` | Number of characters of the whole output, not counting the terminating null byte, also when the output is truncated. An output longer than `INT_MAX` is reported as `INT_MAX`. With `SNPRINTF_LEGACY_LENGTH` it is the number of characters written, that is `length - 1`, for a truncated output. |
 | `-1`   | `string` is not `NULL` and `length` is `0`, or a strict-mode validation failure.                                                                         |
 
-Note that the result of a truncated output is not the length of the whole output, as the C99 `snprintf()` returns. To find out the size of a buffer, call the function with a `NULL` `string`.
+This is the same as the C99 `snprintf()` returns, so a caller can tell that the output was truncated and retry with a bigger buffer. To find out the size of a buffer up front, call the function with a `NULL` `string`.
+
+### Optional legacy return value
+
+Before version 3.2 the result of a truncated output was the number of characters written, not the length of the whole output, and `%n` stored that number. Define `SNPRINTF_LEGACY_LENGTH` to keep it, for a project that depends on it:
+
+```sh
+make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_LEGACY_LENGTH -Wall -Wextra -g"
+```
+
+The two modes differ only in the returned length and in what `%n` stores. The text written into the buffer, and the bytes past its end, are the same in both.
 
 ## Usage
 
@@ -72,8 +82,6 @@ This is a good default for portability and compatibility, but it is not a safety
 
 ### Differences to the C library
 
-- The result of a truncated output is the number of characters written, and not the length of the whole output.
-- `%n` stores the number of characters written so far, which is not more than `length - 1`. The output is not processed any more after it is truncated, so `%n` is not stored when it is reached after that point.
 - `%g` and `%G` with the `#` flag always print as many significant digits as the precision says, also when rounding makes the number a power of ten, as the C standard requires (glibc prints `1.e+06` for `999999.5`).
 - `%s` of a `NULL` pointer prints `(null)`, cut by the precision.
 - The length modifier `l` is ignored by `%s` and `%c`: there are no wide characters.
@@ -108,6 +116,7 @@ make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g" LIBRARI
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `USE_SNPRINTF_PREFIX`            | Name the functions `my_snprintf()` and `my_vsnprintf()` and define `snprintf` and `vsnprintf` as macros for them, to link with the C library. The tests need it.                         |
 | `SNPRINTF_STRICT`                | Return `-1` for a malformed or unsupported specifier.                                                                                                                                    |
+| `SNPRINTF_LEGACY_LENGTH`         | Return and store the number of characters written into the buffer instead of the length of the whole output, as before version 3.2.                                                |
 | `SNPRINTF_USE_MATH`              | Use `modf()` and `signbit()` of `math.h`.                                                                                                                                                |
 | `SNPRINTF_FLOAT_INTEGRAL_DIGITS` | Digits of the integral part of a `double`, `309` by default, which is enough for every `double`. A smaller number saves stack, but bigger numbers are then printed as a row of nines. Set it when compiling `snprintf.c`. |
 
@@ -191,7 +200,8 @@ The `fuzz` directory has a differential fuzz test: every random format, with ran
 
 ```sh
 make -C fuzz check                                   # 3 seeds, 200000 formats each, with sanitizers
-make -C fuzz check DEFS=-DSNPRINTF_STRICT            # also with -DSNPRINTF_USE_MATH
+make -C fuzz check DEFS=-DSNPRINTF_STRICT            # also with -DSNPRINTF_LEGACY_LENGTH
+make -C fuzz check DEFS=-DSNPRINTF_USE_MATH           # and with -DSNPRINTF_FLOAT_INTEGRAL_DIGITS=40
 make -C fuzz check SAN= CFLAGS="-O2 -m32"            # 32 bits, without sanitizers
 make -C fuzz run SEED=1234 ITERATIONS=1000000        # reproduce a failure
 ```

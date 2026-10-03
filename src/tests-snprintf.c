@@ -26,13 +26,40 @@
 static char msg[32] = {0, };
 
 
+/**
+ * The number of characters written into msg, not counting the terminating '\0',
+ * or sizeof(msg) when msg is not terminated at all.
+ */
+static int written_length(void) {
+	int i;
+	for (i = 0; i < (int)sizeof(msg); i++) {
+		if (msg[i] == '\0') {
+			return i;
+		}
+	}
+	return (int)sizeof(msg);
+}
+
+
+/* ret is the length of the whole output, which can be longer than the buffer,
+   so the terminating '\0' is looked for in the buffer and not at msg[ret]. */
 #define TEST(ret_expected, msg_expected, ret) { 		\
 	mu_assert_int_eq((ret_expected), ret); 				\
 	if ((ret) >= 0) { 									\
-		mu_check(msg[(ret)] == '\0'); 					\
+		mu_check(written_length() < (int)sizeof(msg)); 	\
 		mu_assert_string_eq((msg_expected), msg); 		\
 	} 													\
 }
+
+
+/* The length the function returns for a whole output of @p whole characters of
+   which @p written fit into the buffer: the whole length, or only the written
+   part in the legacy mode of SNPRINTF_LEGACY_LENGTH. */
+#ifdef SNPRINTF_LEGACY_LENGTH
+#define RETURNED(whole, written) (written)
+#else
+#define RETURNED(whole, written) (whole)
+#endif
 
 
 #if __GNUC__ >= 7
@@ -68,17 +95,17 @@ MU_TEST(test_buffer_length_0) {
 
 MU_TEST(test_buffer_length_1) {
 	int ret = snprintf(msg, 1, "%d", 123);
-	TEST(0, "",	ret);
+	TEST(RETURNED(3, 0), "", ret);
 }
 
 MU_TEST(test_buffer_length_2) {
 	int ret = snprintf(msg, 2, "%d", 123);
-	TEST(1, "1", ret);
+	TEST(RETURNED(3, 1), "1", ret);
 }
 
 MU_TEST(test_buffer_length_3) {
 	int ret = snprintf(msg, 3, "%d", 123);
-	TEST(2, "12", ret);
+	TEST(RETURNED(3, 2), "12", ret);
 }
 
 #ifdef __clang__
@@ -563,7 +590,7 @@ MU_TEST(test_double_large_fixed_truncates_safely) {
 	buffer.canary = 'X';
 
 	int ret = snprintf(buffer.output, sizeof(buffer.output), "%.0f", 1e100);
-	mu_assert_int_eq(7, ret);
+	mu_assert_int_eq(RETURNED(101, 7), ret); /* the length of 1e100, not the size of the buffer */
 	mu_check(buffer.output[0] != '\0');
 	mu_check(buffer.output[7] == '\0');
 	mu_assert_int_eq('X', buffer.canary);
@@ -591,7 +618,9 @@ MU_TEST(test_extreme_format_width_and_precision) {
 
 	const char *wide_format = "%2147483648s";
 	int ret = snprintf(buffer.output, sizeof(buffer.output), wide_format, "x");
-	mu_assert_int_eq(7, ret);
+	// a width that does not fit into an int is not defined by the C standard,
+	// the saturated width is counted and the result is cut to INT_MAX
+	mu_assert_int_eq(RETURNED(INT_MAX, 7), ret);
 	for (size_t i = 0; i < sizeof(buffer.output) - 1; i++) {
 		mu_check(buffer.output[i] == ' ');
 	}
@@ -599,20 +628,21 @@ MU_TEST(test_extreme_format_width_and_precision) {
 	mu_assert_int_eq('X', buffer.canary);
 
 	ret = snprintf(buffer.output, sizeof(buffer.output), "%*s", INT_MAX, "x");
-	mu_assert_int_eq(7, ret);
+	mu_assert_int_eq(RETURNED(INT_MAX, 7), ret);
 	for (size_t i = 0; i < sizeof(buffer.output) - 1; i++) {
 		mu_check(buffer.output[i] == ' ');
 	}
 	mu_check(buffer.output[7] == '\0');
 	mu_assert_int_eq('X', buffer.canary);
 
+	// a NULL buffer is never full, so the whole length is reported in both modes
 	ret = snprintf(NULL, 0, "%*s", INT_MAX, "x");
 	mu_assert_int_eq(INT_MAX, ret);
 
 	const char *dynamic_width_format = "%*s";
 	ret = snprintf(buffer.output, sizeof(buffer.output), dynamic_width_format,
 		INT_MIN, "x");
-	mu_assert_int_eq(7, ret);
+	mu_assert_int_eq(RETURNED(INT_MAX, 7), ret); /* a negative width from a star is the '-' flag */
 	mu_check(buffer.output[0] == 'x');
 	for (size_t i = 1; i < sizeof(buffer.output) - 1; i++) {
 		mu_check(buffer.output[i] == ' ');
@@ -638,7 +668,7 @@ MU_TEST(test_double_null_buffer_and_truncation) {
 
 	char small_output[5];
 	int ret = snprintf(small_output, sizeof(small_output), "%.2f", 123.45);
-	mu_assert_int_eq(4, ret);
+	mu_assert_int_eq(RETURNED(6, 4), ret); /* "123.45" does not fit into 4 characters */
 	mu_assert_string_eq("123.", small_output);
 }
 
@@ -787,7 +817,7 @@ MU_TEST(test_string_width_as_parameter_negative) {
 MU_TEST(test_string_too_long) {
 	const char *str = "This is very long message and it is much longer than buffer!";
 	int ret = snprintf(msg, sizeof(msg), "%s", str);
-	TEST(sizeof(msg) - 1, "This is very long message and i", ret);
+	TEST(RETURNED((int)strlen(str), (int)sizeof(msg) - 1), "This is very long message and i", ret);
 }
 
 MU_TEST(test_strings) {
@@ -1220,13 +1250,13 @@ MU_TEST(test_prefix_is_not_skipped_when_buffer_is_null_or_full) {
 	mu_assert_int_eq(15, ret);
 
 	ret = snprintf(msg, 2, "%#x", 255u);
-	TEST(1, "0", ret);
+	TEST(RETURNED(4, 1), "0", ret);
 
 	ret = snprintf(msg, 3, "%p", (void *)0x1234);
-	TEST(2, "0x", ret);
+	TEST(RETURNED(6, 2), "0x", ret);
 
 	ret = snprintf(msg, 2, "%f", INFINITY);
-	TEST(1, "i", ret);
+	TEST(RETURNED(3, 1), "i", ret);
 
 	ret = snprintf(NULL, 0, "%f", -INFINITY);
 	mu_assert_int_eq(4, ret);
@@ -1240,6 +1270,108 @@ MU_TEST(test_prefix_is_not_skipped_when_buffer_is_null_or_full) {
 
 	ret = snprintf(msg, sizeof(msg), "%012.3f", -1.5);
 	TEST(12, "-0000001.500", ret);
+}
+
+MU_TEST(test_truncated_output_returns_the_whole_length) {
+	// the C library returns the length of the whole output, so a caller can
+	// tell that the output was truncated and retry with a bigger buffer
+	int ret = snprintf(msg, 4, "%s-%s", "aaaaaaaaaa", "bbbbbbbbbb");
+	TEST(RETURNED(21, 3), "aaa", ret);
+
+	ret = snprintf(msg, 1, "hello");
+	TEST(RETURNED(5, 0), "", ret);
+
+	ret = snprintf(msg, 8, "%.99s", "12345678901234567890");
+	TEST(RETURNED(20, 7), "1234567", ret);
+
+	// the conversions after the truncation are counted, and the whole format
+	// is processed, also the padding of a wide field
+	ret = snprintf(msg, 4, "%d%s", 12, "abc");
+	TEST(RETURNED(5, 3), "12a", ret);
+
+	ret = snprintf(msg, 4, "%20d", 7);
+	TEST(RETURNED(20, 3), "   ", ret);
+
+	// the same length as with a NULL buffer, and as with a big enough buffer
+	ret = snprintf(msg, 4, "%s", "0123456789ABCDEF");
+	TEST(RETURNED(16, 3), "012", ret);
+	mu_assert_int_eq(16, snprintf(NULL, 0, "%s", "0123456789ABCDEF"));
+
+	char big[64];
+	mu_assert_int_eq(16, snprintf(big, sizeof(big), "%s", "0123456789ABCDEF"));
+	mu_assert_string_eq("0123456789ABCDEF", big);
+}
+
+MU_TEST(test_truncated_output_does_not_write_past_the_buffer) {
+	// a guard after the buffer must stay untouched, also for a wide field
+	// whose padding does not fit at all
+	struct {
+		char text[4];
+		unsigned char guard[8];
+	} b;
+	memset(&b, 0x5a, sizeof(b));
+	mu_assert_int_eq(RETURNED(20, 3), snprintf(b.text, sizeof(b.text), "%20d", 7));
+	mu_assert_string_eq("   ", b.text); /* the padding fits, the digit does not */
+	for (size_t i = 0; i < sizeof(b.guard); i++) {
+		mu_check(b.guard[i] == 0x5a);
+	}
+
+	// the field width is counted even when not a single byte of it fits
+	mu_assert_int_eq(RETURNED(11, 0), snprintf(b.text, 1, "%10d|", 7));
+	mu_assert_string_eq("", b.text);
+}
+
+MU_TEST(test_counter_is_the_whole_length_when_truncated) {
+	// %n is reached and stores the length of the output before it, in all modes
+	int counter = -1;
+	int ret = snprintf(msg, 8, "ab%n", &counter);
+	TEST(2, "ab", ret);
+	mu_assert_int_eq(2, counter);
+
+	// a truncation after %n does not change what it stored
+	counter = -1;
+	ret = snprintf(msg, 4, "a%n-bcdef", &counter);
+	TEST(RETURNED(7, 3), "a-b", ret);
+	mu_assert_int_eq(1, counter);
+}
+
+MU_TEST(test_counter_reached_after_a_truncation) {
+	// What %n stores when the buffer was already full when it is reached.
+	// The legacy mode alone stops the output at the truncation, so %n is never
+	// reached. The strict mode keeps validating the format and reaches it, and
+	// it stores the number of characters written, like the whole output without.
+	int counter = -1;
+	int ret = snprintf(msg, 4, "abcd%n", &counter);
+	TEST(RETURNED(4, 3), "abc", ret);
+#if defined(SNPRINTF_LEGACY_LENGTH) && !defined(SNPRINTF_STRICT)
+	mu_check(counter == -1); /* not stored */
+#elif defined(SNPRINTF_LEGACY_LENGTH)
+	mu_assert_int_eq(3, counter);
+#else
+	mu_assert_int_eq(4, counter);
+#endif
+
+	// the same for a conversion whose text does not fit at all
+	counter = -1;
+	ret = snprintf(msg, 2, "%d%n", 2020, &counter);
+	TEST(RETURNED(4, 1), "2", ret);
+#if defined(SNPRINTF_LEGACY_LENGTH) && !defined(SNPRINTF_STRICT)
+	mu_check(counter == -1); /* not stored */
+#elif defined(SNPRINTF_LEGACY_LENGTH)
+	mu_assert_int_eq(1, counter);
+#else
+	mu_assert_int_eq(4, counter);
+#endif
+}
+
+MU_TEST(test_long_output_is_reported_as_int_max) {
+	// a length that does not fit into an int must not turn into an error
+	int ret = snprintf(NULL, 0, "%*d", INT_MAX, 7);
+	mu_assert_int_eq(INT_MAX, ret);
+
+	ret = snprintf(msg, 4, "%*d", INT_MAX, 7);
+	mu_assert_int_eq(RETURNED(INT_MAX, 3), ret);
+	mu_assert_string_eq("   ", msg);
 }
 
 MU_TEST(test_counters) {
@@ -1421,6 +1553,11 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_negative_zero);
 	MU_RUN_TEST(test_double_big_integral_part_is_exact);
 	MU_RUN_TEST(test_prefix_is_not_skipped_when_buffer_is_null_or_full);
+	MU_RUN_TEST(test_truncated_output_returns_the_whole_length);
+	MU_RUN_TEST(test_truncated_output_does_not_write_past_the_buffer);
+	MU_RUN_TEST(test_counter_is_the_whole_length_when_truncated);
+	MU_RUN_TEST(test_counter_reached_after_a_truncation);
+	MU_RUN_TEST(test_long_output_is_reported_as_int_max);
 }
 
 

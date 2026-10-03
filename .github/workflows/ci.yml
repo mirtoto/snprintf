@@ -12,7 +12,8 @@ jobs:
       fail-fast: false
       matrix:
         cc: [gcc, clang]
-        defs: ["", "-DSNPRINTF_STRICT", "-DSNPRINTF_USE_MATH"]
+        defs: ["", "-DSNPRINTF_STRICT", "-DSNPRINTF_LEGACY_LENGTH",
+               "-DSNPRINTF_USE_MATH"]
     steps:
       - uses: actions/checkout@v5
 

@@ -119,11 +119,6 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  * 
  * # Differences to the C library
  * 
- *  - The result of a truncated output is the number of characters written,
- *    that is @p length - 1, and not the length of the whole output.
- *  - %n stores the number of characters written so far, which is not more
- *    than @p length - 1. The output is not processed any more after it is
- *    truncated, so it is not stored when it is reached after that point.
  *  - %g and %G with the # flag always print as many significant digits as the
  *    precision says, also when rounding makes the number a power of ten, as
  *    the C standard requires (glibc prints 1.e+06 for 999999.5).
@@ -135,6 +130,11 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    printed, the unsupported character is skipped, the rest is printed as
  *    text and no argument is used. In the strict mode the function fails.
  * 
+ *  With SNPRINTF_LEGACY_LENGTH the result of a truncated output is the number
+ *  of characters written instead of the length of the whole output, and %n
+ *  stores that number and is not reached at all when the output was already
+ *  truncated, as before version 3.2.
+ * 
  * # Configuration macros
  * 
  *  Macro                           | Description
@@ -145,6 +145,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *                                  | with the C library
  *  SNPRINTF_STRICT                 | return -1 for a malformed or unsupported
  *                                  | specifier, see above
+ *  SNPRINTF_LEGACY_LENGTH          | return and store the number of characters
+ *                                  | written into the buffer instead of the
+ *                                  | length of the whole output, see above
  *  SNPRINTF_USE_MATH               | use modf() and signbit() of math.h
  *  SNPRINTF_FLOAT_INTEGRAL_DIGITS  | digits of the integral part of a double,
  *                                  | 309 by default, a smaller number saves
@@ -157,9 +160,11 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  * @param format Format of input parameters.
  * @param ... Input parameters according of @p format.
  * 
- * @retval >=0 Number of characters written, not counting the terminating
- *             '\0', which is @p length - 1 if the output is truncated. If
- *             @p string is NULL, the number of characters of the whole output.
+ * @retval >=0 Number of characters of the whole output, not counting the
+ *             terminating '\0', also when the output is truncated. An output
+ *             longer than INT_MAX is reported as INT_MAX. With
+ *             SNPRINTF_LEGACY_LENGTH it is the number of characters written,
+ *             that is @p length - 1, for a truncated output.
  * @retval  -1 The @p string is not NULL and @p length is 0, or the strict mode
  *             does not accept the @p format.
  */
