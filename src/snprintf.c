@@ -1721,6 +1721,14 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'c': { /* single character */
             int i;
             char pad = data.pad;
+#ifdef SNPRINTF_STRICT
+            /* the only length modifier the standard defines for a character is
+               l, a wide character, which there are none of; the others are not
+               defined for it at all */
+            if (data.a_long != INT_LEN_DEFAULT) {
+              return fail(&data);
+            }
+#endif
             WIDTH_AND_PRECISION_ARGS(&data);
             i = va_arg(args, int);
             data.width--;

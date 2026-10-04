@@ -172,6 +172,18 @@ MU_TEST(test_strict_mode_rejects_malformed_specifier) {
 
 	ret = snprintf(msg, sizeof(msg), "%#s", "text");
 	mu_assert_int_eq(-1, ret);
+
+	// a length modifier means a wide character or a string of wide ones,
+	// which this implementation has none of
+	ret = snprintf(msg, sizeof(msg), "%lc", 65);
+	mu_assert_int_eq(-1, ret);
+
+	ret = snprintf(msg, sizeof(msg), "%lls", "text");
+	mu_assert_int_eq(-1, ret);
+
+	// these are not defined for a character at all
+	ret = snprintf(msg, sizeof(msg), "%zs", "text");
+	mu_assert_int_eq(-1, ret);
 }
 #else
 MU_TEST(test_wrong_format_no_type) {
@@ -932,6 +944,22 @@ MU_TEST(test_char_width_and_alignment) {
 	TEST(3, "D  ", ret);
 }
 
+#ifndef SNPRINTF_STRICT
+MU_TEST(test_char_length_modifier_is_ignored) {
+	// there are no wide characters, so a length modifier is ignored and the
+	// argument is an int, like without it; the strict mode refuses it instead,
+	// see test_strict_mode_rejects_malformed_specifier
+	int ret = snprintf(msg, sizeof(msg), "%lc %llc %hc %zc", 'A', 'B', 'C', 'D');
+	TEST(7, "A B C D", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%5lc", 'A');
+	TEST(5, "    A", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%ls", "Hello");
+	TEST(5, "Hello", ret);
+}
+#endif
+
 MU_TEST(test_pointer_null) {
 	int ret = snprintf(msg, sizeof(msg), "%p", (void *)0);
 	TEST(5, "(nil)", ret);
@@ -1556,7 +1584,7 @@ MU_TEST(test_strict_mode_terminates_the_buffer_on_failure) {
 
 	static const char *const formats[] = {
 		"ok %y", "ok %-", "ok %+s", "ok %Lg", "ok %ad", "ok %#s", "ok %ls",
-		"ok %05s", "ok %y%y", "ok %1$d", "ok %",
+		"ok %05s", "ok %lc", "ok %y%y", "ok %1$d", "ok %",
 	};
 
 	for (size_t f = 0; f < sizeof formats / sizeof *formats; f++) {
@@ -1724,6 +1752,9 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_strings);
 	MU_RUN_TEST(test_chars);
 	MU_RUN_TEST(test_char_width_and_alignment);
+#ifndef SNPRINTF_STRICT
+	MU_RUN_TEST(test_char_length_modifier_is_ignored);
+#endif
 
 	MU_RUN_TEST(test_pointer_null);
 	MU_RUN_TEST(test_pointer);

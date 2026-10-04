@@ -132,8 +132,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    precision below its 6 characters prints nothing at all, which is what
  *    glibc does.
  *  - The length modifier l is ignored by %s and %c, there are no wide
- *    characters. The strict mode rejects it on %s, like the flags the
- *    standard does not define there, and fails.
+ *    characters. The strict mode rejects a length modifier on both of them,
+ *    and on %s the flags the standard does not define there as well, and
+ *    fails.
  *  - Not supported are the length modifier L (long double), the conversions
  *    a and A, and numbered arguments like %1$d. A percent character is
  *    printed, the unsupported character is skipped, the rest is printed as
