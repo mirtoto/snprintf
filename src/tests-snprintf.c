@@ -543,6 +543,28 @@ MU_TEST(test_double_g_alternate_form_and_significant_precision) {
 	ret = snprintf(msg, sizeof(msg), "%#.3g %#.3G", 12000.0, 12000.0);
 	TEST(17, "1.20e+04 1.20E+04", ret);
 
+	// the rounding carries into a new power of ten and every digit of the
+	// precision is kept, which glibc does not do, see the README
+	ret = snprintf(msg, sizeof(msg), "%#g %#G", 999999.5, 999999.5);
+	TEST(23, "1.00000e+06 1.00000E+06", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%#.6g %#.6G", 999999.5, 999999.5);
+	TEST(23, "1.00000e+06 1.00000E+06", ret);
+
+	// a precision of 1 is the point itself, and there is no digit to keep
+	ret = snprintf(msg, sizeof(msg), "%#.0g %#.0G", 999999.5, 999999.5);
+	TEST(13, "1.e+06 1.E+06", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%#.3g", 999.5);
+	TEST(8, "1.00e+03", ret);
+
+	// a carry in the decimal notation keeps the digits as well
+	ret = snprintf(msg, sizeof(msg), "%#g", 9.999995);
+	TEST(7, "10.0000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%#g", 0.9999995);
+	TEST(7, "1.00000", ret);
+
 	ret = snprintf(msg, sizeof(msg), "%*.*g", 8, 3, 123.456);
 	TEST(8, "     123", ret);
 

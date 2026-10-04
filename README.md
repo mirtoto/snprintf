@@ -84,7 +84,7 @@ This is a good default for portability and compatibility, but it is not a safety
 
 ### Differences to the C library
 
-- `%g` and `%G` with the `#` flag always print as many significant digits as the precision says, also when rounding makes the number a power of ten, as the C standard requires (glibc prints `1.e+06` for `999999.5`).
+- `%g` and `%G` with the `#` flag always print as many significant digits as the precision says, also when rounding makes the number a power of ten, as the C standard requires: `%#g` of `999999.5` is `1.00000e+06`, where glibc prints `1.e+06`.
 - `%s` of a `NULL` pointer prints `(null)`, whole or cut by the precision, but a precision below its 6 characters prints nothing at all, which is what glibc does.
 - The length modifier `l` is ignored by `%s` and `%c`: there are no wide characters. The strict mode rejects it on `%s`, like the flags the standard does not define there, and returns `-1`.
 - The precision is limited, see [Width and precision](#width-and-precision).
