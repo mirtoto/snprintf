@@ -42,6 +42,9 @@
  *    2^64, base-10^9 limbs above, without growing the stack, and
  *    values of 2^52 and above are no longer "rounded" before
  *    formatting, so odd integers no longer print one too high.
+ *  - Integer precision of any size: a precision is now only a minimum
+ *    number of digits and never cuts the value short, which the
+ *    99-digit buffer of the integer conversion used to do.
  *  - Correct flags and precision: %*p now consumes its width
  *    argument; - together with 0 pads with spaces on the right;
  *    a lone . means precision 0, so %.s prints nothing; %#x of 0
@@ -53,13 +56,13 @@
  *    self-contained; SNPRINTF_USE_MATH opts into <math.h> helpers,
  *    and the Makefile links -lm only for that backend.
  *  - Robustness: fixed a hang in the PUT_CHAR macro and compilation
- *    warnings; %p no longer sign-extends on 32-bit targets (that
- *    path is untested, as -m32 is not available here).
+ *    warnings; %p no longer sign-extends on 32-bit targets, which
+ *    the unit tests and the fuzz test now cover in the 32-bit CI job.
  *  - Differential fuzz test: fuzz/ compares the output against the
  *    C library (make -C fuzz check), and GitHub Actions CI runs gcc
- *    and clang across default, strict, and math builds with -Werror,
- *    ASan/UBSan unit tests, and fuzz runs, plus a best-effort
- *    32-bit job.
+ *    and clang across the default, strict, legacy and math builds
+ *    with -Werror, ASan/UBSan unit tests and fuzz runs, plus the
+ *    blocking 32-bit job, for -m32 and for -m32 -msse2 -mfpmath=sse.
  *  - Expanded tests: char width and alignment, pointer width,
  *    unsigned maxima, and sign-flag edge cases.
  * 
@@ -333,9 +336,8 @@ static void terminate_buffer(struct DATA *p) {
  *
  * The C standard asks for at least 999 of them, but the exact conversion keeps a
  * buffer of this many digits on the stack, which costs about 3 bytes per digit in
- * the deepest call chain of %e and %f, and about 4 for %g, which measures the
- * exponent first. A project which needs more can set it when compiling
- * snprintf.c, at the cost of that stack:
+ * the deepest call chain of %e and %g, and about 1 for %f. Set it higher when
+ * compiling snprintf.c if a project needs more, at the cost of that stack:
  *
  *     -DSNPRINTF_FLOAT_PRECISION=999
  *

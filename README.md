@@ -46,7 +46,9 @@ Before version 3.2 the result of a truncated output was the number of characters
 make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_LEGACY_LENGTH -Wall -Wextra -g"
 ```
 
-The two modes differ only in the returned length and in what `%n` stores. The text written into the buffer, and the bytes past its end, are the same in both.
+In that mode nothing more can be written once the buffer is full, so the rest of the format is not processed at all and a `%n` behind that point is never stored. Apart from the returned length and the `%n`, the two modes write the same text into the buffer and leave the same bytes past its end.
+
+The strict mode is the exception, because it always processes the whole format to validate it: also with `SNPRINTF_LEGACY_LENGTH` a `%n` behind a full buffer is reached, and stores the number of characters written.
 
 ## Usage
 
@@ -84,7 +86,7 @@ This is a good default for portability and compatibility, but it is not a safety
 
 - `%g` and `%G` with the `#` flag always print as many significant digits as the precision says, also when rounding makes the number a power of ten, as the C standard requires (glibc prints `1.e+06` for `999999.5`).
 - `%s` of a `NULL` pointer prints `(null)`, cut by the precision.
-- The length modifier `l` is ignored by `%s` and `%c`: there are no wide characters.
+- The length modifier `l` is ignored by `%s` and `%c`: there are no wide characters. The strict mode rejects it on `%s`, like the flags the standard does not define there, and returns `-1`.
 - The precision is limited, see [Width and precision](#width-and-precision).
 - Not supported are the length modifier `L` (`long double`), the conversions `a` and `A`, and numbered arguments like `%1$d`. A percent character is printed, the unsupported character is skipped, the rest is printed as text and no argument is used. In strict mode the function returns `-1`.
 
@@ -104,10 +106,10 @@ This preserves the default compatibility model while giving embedded or security
 
 ### Optional math library support
 
-The floating-point conversion is self-contained and does not require `math.h` or libm. Define `SNPRINTF_USE_MATH` to use `modf()` and `signbit()` from `math.h` instead of the built-in helpers. On toolchains where these functions are provided by a separate math library, link with `-lm`:
+The floating-point conversion is self-contained and does not require `math.h` or libm. Define `SNPRINTF_USE_MATH` to use `modf()` and `signbit()` from `math.h` instead of the built-in helpers. On toolchains where these functions are provided by a separate math library, link with `-lm`, which the Makefile of this project adds for that backend on its own:
 
 ```sh
-make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g" LIBRARIES="-lm"
+make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g"
 ```
 
 ### Configuration macros
@@ -119,7 +121,7 @@ make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g" LIBRARI
 | `SNPRINTF_LEGACY_LENGTH`         | Return and store the number of characters written into the buffer instead of the length of the whole output, as before version 3.2.                                                |
 | `SNPRINTF_USE_MATH`              | Use `modf()` and `signbit()` of `math.h`.                                                                                                                                                |
 | `SNPRINTF_FLOAT_INTEGRAL_DIGITS` | Digits of the integral part of a `double`, `309` by default, which is enough for every `double`. A smaller number saves stack, but bigger numbers are then printed as a row of nines. Set it when compiling `snprintf.c`. |
-| `SNPRINTF_FLOAT_PRECISION`       | Digits of the precision of `%e`, `%E`, `%f`, `%F`, `%g` and `%G`, `29` by default. The C standard asks for at least `999`, so set it higher, e.g. to `999`, to be conformant. The stack grows by about 3 bytes per digit for `%e` and `%f`, and by about 4 for `%g`. A bigger precision is lowered to this one, or fails with `-1` in the strict mode. Set it when compiling `snprintf.c`. |
+| `SNPRINTF_FLOAT_PRECISION`       | Digits of the precision of `%e`, `%E`, `%f`, `%F`, `%g` and `%G`, `29` by default. The C standard asks for at least `999`, so set it higher, e.g. to `999`, to be conformant. The stack grows by about 3 bytes per digit for `%e` and `%g`, and by about 1 for `%f`. A bigger precision is lowered to this one, or fails with `-1` in the strict mode. Set it when compiling `snprintf.c`. |
 
 ## Supported format specifiers
 
@@ -137,7 +139,7 @@ make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g" LIBRARI
 | `c`       | character                                                      |
 | `s`       | string, `(null)` for a `NULL` pointer                          |
 | `p`       | pointer, `(nil)` for a `NULL` pointer                          |
-| `n`       | store the number of characters written so far                  |
+| `n`       | length of the whole output so far, see [Optional legacy return value](#optional-legacy-return-value) |
 | `%`       | percent sign                                                   |
 
 ### Length modifiers
@@ -183,7 +185,7 @@ The digits are those of the exact binary value of the `double`, rounded to neare
 
 Infinity is printed as `inf` and not a number as `nan`, in capitals for `F`, `E` and `G`, and the `0` flag is ignored for them. The sign of NaN is not printed. Negative zero is printed with a minus sign.
 
-The conversion uses integer arithmetic only. Its cost is some stack: `floating()` needs about 600 bytes with the default 309 digits, and about 250 bytes with `-DSNPRINTF_FLOAT_INTEGRAL_DIGITS=40`. `SNPRINTF_FLOAT_PRECISION` adds about 3 bytes per digit on top of that, so `-DSNPRINTF_FLOAT_PRECISION=999` needs about 3.7 kB for `%e` and about 4.8 kB for `%g`, which measures the exponent first.
+The conversion uses integer arithmetic only. Its cost is some stack: `floating()` needs about 600 bytes with the default 309 digits, and about 300 bytes with `-DSNPRINTF_FLOAT_INTEGRAL_DIGITS=40`. `SNPRINTF_FLOAT_PRECISION` adds about 3 bytes per digit on top of that for `%e` and `%g`, and about 1 for `%f`, so `-DSNPRINTF_FLOAT_PRECISION=999` needs about 3.7 kB for `%e` and for `%g` alike: `%g` measures the exponent first, but that call has returned before the digits are printed. These numbers were measured with gcc, another compiler may need a little more or less.
 
 ## Testing
 
@@ -197,7 +199,7 @@ int main(void) {
 }
 ```
 
-The `fuzz` directory has a differential fuzz test: every random format, with random flags, width, precision, length modifiers and values, is run through the C library and through this implementation, and the output, the returned length, the length for a `NULL` buffer and the truncated output are compared. The formats it leaves out are the differences listed above.
+The `fuzz` directory has a differential fuzz test: every random format, with random flags, width, precision, length modifiers and values, is run through the C library and through this implementation, and the output, the returned length, the length for a `NULL` buffer and the truncated output are compared. The formats it leaves out are the differences listed above, plus `%n` and a few cases the C standard does not define, all listed at the top of `fuzz-snprintf.c`.
 
 ```sh
 make -C fuzz check                                   # 3 seeds, 200000 formats each, with sanitizers
@@ -207,7 +209,7 @@ make -C fuzz check SAN= CFLAGS="-O2 -m32"            # 32 bits, without sanitize
 make -C fuzz run SEED=1234 ITERATIONS=1000000        # reproduce a failure
 ```
 
-The unit tests and the fuzz test run in CI for gcc and clang, in all three builds, and in 32 bits, see `.github/workflows/ci.yml`.
+The unit tests and the fuzz test run in CI for gcc and clang, in all four builds (the default one, `SNPRINTF_STRICT`, `SNPRINTF_LEGACY_LENGTH` and `SNPRINTF_USE_MATH`), and in 32 bits for `-m32` and `-m32 -msse2 -mfpmath=sse`, see `.github/workflows/ci.yml`.
 
 ## Authors
 

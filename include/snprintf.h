@@ -64,7 +64,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *  c       | character
  *  s       | string, (null) for a NULL pointer
  *  p       | pointer, (nil) for a NULL pointer
- *  n       | store the number of characters written so far, see below
+ *  n       | store the length of the whole output so far, see below
  *  %       | percent character
  * 
  * # Supported lengths
@@ -119,7 +119,8 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  * have as many digits as SNPRINTF_FLOAT_INTEGRAL_DIGITS, 309 by default,
  * which is enough for the biggest double. Infinity is printed as inf and
  * not a number as nan, in capitals for F, E and G, and then the 0 flag is
- * ignored. The sign of NaN is not printed.
+ * ignored. The sign of NaN is not printed, and negative zero keeps a minus
+ * sign.
  * 
  * # Differences to the C library
  * 
@@ -128,7 +129,8 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    the C standard requires (glibc prints 1.e+06 for 999999.5).
  *  - %s of a NULL pointer prints (null), cut by the precision.
  *  - The length modifier l is ignored by %s and %c, there are no wide
- *    characters.
+ *    characters. The strict mode rejects it on %s, like the flags the
+ *    standard does not define there, and fails.
  *  - Not supported are the length modifier L (long double), the conversions
  *    a and A, and numbered arguments like %1$d. A percent character is
  *    printed, the unsupported character is skipped, the rest is printed as
@@ -137,7 +139,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *  With SNPRINTF_LEGACY_LENGTH the result of a truncated output is the number
  *  of characters written instead of the length of the whole output, and %n
  *  stores that number and is not reached at all when the output was already
- *  truncated, as before version 3.2.
+ *  truncated, as before version 3.2. The strict mode is the exception, as it
+ *  always processes the whole format: there %n is reached behind a full buffer
+ *  and stores the number of characters written.
  * 
  * # Configuration macros
  * 
@@ -162,8 +166,8 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *                                  | standard asks for at least 999, so set
  *                                  | this higher, e.g. to 999, at the cost of
  *                                  | the stack, which grows by about 3 bytes
- *                                  | per digit for %e and %f and by about 4
- *                                  | for %g. A bigger precision is lowered to
+ *                                  | per digit for %e and %g and by about 1
+ *                                  | for %f. A bigger precision is lowered to
  *                                  | this one, or fails in the strict mode,
  *                                  | set it for snprintf.c
  * 
