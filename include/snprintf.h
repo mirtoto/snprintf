@@ -137,6 +137,11 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    characters. The strict mode rejects a length modifier on both of them,
  *    and on %s the flags the standard does not define there as well, and
  *    fails.
+ *  - The integral part of a floating-point number is limited to
+ *    SNPRINTF_FLOAT_INTEGRAL_DIGITS digits, 309 by default and enough for every
+ *    double. A smaller value saves stack, and a number with a longer integral
+ *    part is then printed as a row of nines, with the exponent of %e and %g
+ *    taken from the biggest number that fits.
  *  - Not supported are the length modifier L (long double), the conversions
  *    a and A, and numbered arguments like %1$d. Only the % is printed:
  *    everything from it to the unsupported character goes with it, and the

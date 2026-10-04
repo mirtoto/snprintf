@@ -89,6 +89,7 @@ This is a good default for portability and compatibility, but it is not a safety
 - The sign of a NaN is not printed, so a negative one gives `nan`, where glibc gives `-nan`. An infinity keeps its sign.
 - The length modifier `l` is ignored by `%s` and `%c`: there are no wide characters. The strict mode rejects a length modifier on both of them, and on `%s` also the flags the standard does not define there, and returns `-1`.
 - The precision is limited, see [Width and precision](#width-and-precision).
+- The integral part of a floating-point number is limited to `SNPRINTF_FLOAT_INTEGRAL_DIGITS` digits, 309 by default and enough for every `double`. A smaller value saves stack, and a number with a longer integral part is then printed as a row of nines, with the exponent of `%e` and `%g` taken from the biggest number that fits, see [Floating-point conversions](#floating-point-conversions).
 - Not supported are the length modifier `L` (`long double`), the conversions `a` and `A`, and numbered arguments like `%1$d`. Only the `%` is printed: everything from it to the unsupported character goes with it, and the rest of the format is text, so `%5k` prints `%`, `%La` prints `%a` and `%1$d` prints `%d`. No argument is used, so a conversion after it reads the argument the unsupported one would have had. In strict mode the function returns `-1`.
 
 ### Optional strict mode
@@ -205,7 +206,7 @@ The `fuzz` directory has a differential fuzz test: every random format, with ran
 ```sh
 make -C fuzz check                                   # 3 seeds, 200000 formats each, with sanitizers
 make -C fuzz check DEFS=-DSNPRINTF_STRICT            # also with -DSNPRINTF_LEGACY_LENGTH
-make -C fuzz check DEFS=-DSNPRINTF_USE_MATH           # and with -DSNPRINTF_FLOAT_INTEGRAL_DIGITS=40
+make -C fuzz check DEFS=-DSNPRINTF_USE_MATH           # a smaller -DSNPRINTF_FLOAT_INTEGRAL_DIGITS reports differences
 make -C fuzz check SAN= CFLAGS="-O2 -m32"            # 32 bits, without sanitizers
 make -C fuzz run SEED=1234 ITERATIONS=1000000        # reproduce a failure
 ```
