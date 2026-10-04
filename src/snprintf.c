@@ -82,9 +82,10 @@
  *  - Closer printf compatibility: Corrected sign and alignment flag handling, 
  *    zero-padding order, alternate octal zero, negative dynamic widths, 
  *    and %g significant-digit precision and notation boundaries.
- *  - Opt-in strict validation: SNPRINTF_STRICT rejects malformed formats and 
- *    unsupported flags, including malformed format tails after output 
- *    truncation. The default remains permissive.
+ *  - Opt-in strict validation: SNPRINTF_STRICT rejects malformed formats and
+ *    unsupported flags, including malformed format tails after output
+ *    truncation and a floating-point precision over SNPRINTF_FLOAT_PRECISION,
+ *    which the default mode lowers silently. The default remains permissive.
  *  - Safer format processing: Width and precision parsing now saturates 
  *    instead of overflowing. Negative dynamic precision and INT_MIN width 
  *    are handled safely, and padding uses bounded bulk writes instead of 
@@ -152,7 +153,8 @@
  *    carry out of multiplying it by ten;
  *  - %f, %e and %g all use these digits and round to nearest, ties to even,
  *    so the output is the same as the C library gives for IEEE-754 doubles;
- *  - the precision is limited to MAX_PRECISION digits.
+ *  - the precision is limited to SNPRINTF_FLOAT_PRECISION digits, which a
+ *    project can raise to the 999 the C standard asks for.
  */
 
 #include <ctype.h>
@@ -259,9 +261,9 @@ struct DATA {
   do {                                                  \
     size_t repeat_total = (count) > 0 ? (size_t)(count) : 0; \
     size_t repeat_count = repeat_total;                 \
-    size_t available = (p)->ps_size - (p)->written;     \
-    if (repeat_count > available) {                     \
-      repeat_count = available;                         \
+    size_t repeat_room = (p)->ps_size - (p)->written;   \
+    if (repeat_count > repeat_room) {                   \
+      repeat_count = repeat_room;                       \
     }                                                   \
     if ((p)->ps != NULL && repeat_count > 0) {           \
       memset((p)->ps, (unsigned char)(c), repeat_count);\
@@ -314,10 +316,48 @@ static size_t output_count(const struct DATA *p) {
     }                                                   \
   } while (0)
 
-/** Get width and precision arguments if available. */
-#define WIDTH_AND_PRECISION_ARGS(p)                     \
+/**
+ * Terminate the buffer of a rejected format, also when it is rejected halfway, so
+ * that a caller which checks the result for -1 does not read past the end of it.
+ * Only the strict mode rejects a format, and a permissive run always terminates
+ * the buffer at its end.
+ */
+static void terminate_buffer(struct DATA *p) {
+  if (p->ps != NULL) {
+    p->ps[0] = '\0'; /* at most the '\0' slot, see DATA::ps_size */
+  }
+}
+
+/**
+ * Maximum precision of a finite floating-point conversion, in digits.
+ *
+ * The C standard asks for at least 999 of them, but the exact conversion keeps a
+ * buffer of this many digits on the stack, which costs about 3 bytes per digit in
+ * the deepest call chain of %e and %f, and about 4 for %g, which measures the
+ * exponent first. A project which needs more can set it when compiling
+ * snprintf.c, at the cost of that stack:
+ *
+ *     -DSNPRINTF_FLOAT_PRECISION=999
+ *
+ * A bigger precision of a finite value is lowered to this one. The strict mode
+ * fails instead, so that a caller gets -1 and knows the output would not be what
+ * it asked for. An infinity and a not-a-number have no digits, so their precision
+ * is never limited and never fails.
+ */
+#ifndef SNPRINTF_FLOAT_PRECISION
+#define SNPRINTF_FLOAT_PRECISION 29
+#endif
+#define MAX_PRECISION SNPRINTF_FLOAT_PRECISION
+
+/**
+ * Get width and precision arguments if available.
+ *
+ * @param p DATA of the conversion.
+ * @param ap va_list of the format, advanced over the stars.
+ */
+#define WIDTH_AND_PRECISION_ARGS_IN(p, ap)               \
   if ((p)->is_star_w) {                                 \
-    int width_arg = va_arg(args, int);                  \
+    int width_arg = va_arg(ap, int);                    \
     if (width_arg < 0) {                                \
       (p)->align = ALIGN_LEFT;                           \
       (p)->width = width_arg == INT_MIN ? INT_MAX : -width_arg; \
@@ -326,9 +366,12 @@ static size_t output_count(const struct DATA *p) {
     }                                                   \
   }                                                     \
   if ((p)->is_star_p) {                                 \
-    int precision_arg = va_arg(args, int);              \
+    int precision_arg = va_arg(ap, int);                \
     (p)->precision = precision_arg < 0 ? PRECISION_UNSET : precision_arg; \
   }
+
+/** Get width and precision arguments if available. */
+#define WIDTH_AND_PRECISION_ARGS(p) WIDTH_AND_PRECISION_ARGS_IN(p, args)
 
 /** Get integer argument of given type and convert it to long long. */
 #define INTEGER_ARG(p, type, ll)                        \
@@ -348,15 +391,50 @@ static size_t output_count(const struct DATA *p) {
     }                                                   \
   }
 
-/** Get double argument. */
-#define DOUBLE_ARG(p, d)                                \
-  WIDTH_AND_PRECISION_ARGS(p);                          \
-  if ((p)->precision == PRECISION_UNSET) {              \
-    (p)->precision = 6;                                 \
-  } else if ((p)->precision > MAX_PRECISION) {          \
-    (p)->precision = MAX_PRECISION;                     \
-  }                                                     \
-  d = va_arg(args, double);
+/**
+ * Get the double argument of a floating-point conversion, with its width and
+ * precision. A precision which is not given becomes the default one of 6, but a
+ * bigger one is only limited later, by limit_float_precision().
+ *
+ * @param p DATA of the conversion.
+ * @param args Arguments of the format, advanced over the stars and the double.
+ * @param d Set to the argument.
+ */
+static void double_arg(struct DATA *p, va_list *args, double *d) {
+  WIDTH_AND_PRECISION_ARGS_IN(p, *args);
+  if (p->precision == PRECISION_UNSET) {
+    p->precision = 6;
+  }
+  *d = va_arg(*args, double);
+}
+
+/**
+ * Limit the precision of a floating-point conversion to MAX_PRECISION, which is
+ * what the buffers of the exact conversion are sized for. A bigger one is lowered
+ * to it, because anything more cannot be printed. The strict mode refuses it
+ * instead, so that a caller gets -1 and knows the output is not what it asked for.
+ *
+ * It is called once the value is known to be a finite one, because the output of
+ * an infinity or a not-a-number does not depend on the precision at all.
+ *
+ * @param p DATA of the conversion, with its precision.
+ *
+ * @return 0 when the conversion can go on, or -1 when the strict mode refuses the
+ *         precision. The buffer is terminated before that, so the caller only has
+ *         to return -1.
+ */
+static int limit_float_precision(struct DATA *p) {
+  if (p->precision <= MAX_PRECISION) {
+    return 0;
+  }
+#ifdef SNPRINTF_STRICT
+  terminate_buffer(p);
+  return -1;
+#else
+  p->precision = MAX_PRECISION;
+  return 0;
+#endif
+}
 
 /**
  * Convert @p a string to @p res integer.
@@ -388,67 +466,77 @@ static size_t strtoi(const char *a, int *res) {
 }
 
 /**
- * Convert @p number to string representation of given @p base.
+ * Convert the magnitude @p n to the digits of the given @p base, most significant
+ * first, and terminate them with a '\0'.
  *
- * @param number Input number to conversion.
- * @param is_signed Interpret @p number as 'unsigned' (0) / 'signed' (1).
- * @param precision Input @p number precision.
+ * The sign and the padding of a precision are not done here, so that they are
+ * not limited by the size of @p output. An @c unsigned @c long @c long needs 20
+ * digits at most.
+ *
+ * @param n Non-negative value to convert.
  * @param base Output base (8, 10, 16).
- * @param output Buffer for output string.
- * @param output_size Size of @p optput buffer (at least 3 characters).
+ * @param output Buffer for the digits and the '\0', at least 23 bytes.
+ * @param output_size Size of @p output.
+ *
+ * @return Number of digits written.
  */
-static void inttoa(long long number, int is_signed, int precision, int base,
-    char *output, size_t output_size) {    
-  size_t i = 0, j;
+static size_t inttoa(unsigned long long n, int base, char *output,
+    size_t output_size) {
+  size_t i = 0, j, count;
 
   output_size--; /* for '\0' character */
 
-  if (number != 0) {
-    unsigned long long n;
-
-    if (is_signed && number < 0) {
-      if (number == LLONG_MIN) {
-        n = (unsigned long long)LLONG_MAX + 1ULL;
-      } else {
-        n = (unsigned long long)-number;
-      }
-      output_size--; /* for '-' character */
-    } else {
-      n = (unsigned long long)number;
-    }
-
-    while (n != 0 && i < output_size) {
-      int r = (int)(n % (unsigned long long)(base));
-      output[i++] = (char)r + (r < 10 ? '0' : 'a' - 10);
-      n /= (unsigned long long)(base);
-    }
-
-    if (precision > 0) { /* precision defined ? */
-      for (; i < (size_t)precision && i < output_size; i++) {
-        output[i] = '0';
-      }
-    }
-
-    /* put the sign ? */
-    if (is_signed && number < 0) {
-      output[i++] = '-';
-    }
-
-    output[i] = '\0';
-    
-    /* reverse every thing */
-    for (i--, j = 0; j < i; j++, i--) {
-      char tmp = output[i];
-      output[i] = output[j];
-      output[j] = tmp;
-    }
-  } else {
-    precision = precision < 0 ? 1 : precision;
-    for (i = 0; i < (size_t)precision && i < output_size; i++) {
-      output[i] = '0';
-    }
-    output[i] = '\0';
+  while (n != 0 && i < output_size) {
+    int r = (int)(n % (unsigned long long)base);
+    output[i++] = (char)r + (r < 10 ? '0' : 'a' - 10);
+    n /= (unsigned long long)base;
   }
+
+  if (i == 0) { /* a zero value is one '0' digit */
+    output[i++] = '0';
+  }
+  output[i] = '\0';
+  count = i;
+
+  /* reverse every thing */
+  for (j = 0, i--; j < i; j++, i--) {
+    char tmp = output[i];
+    output[i] = output[j];
+    output[j] = tmp;
+  }
+
+  return count;
+}
+
+/**
+ * Magnitude of a @c long @c long, also correct for LLONG_MIN.
+ */
+static unsigned long long magnitude_of(long long number) {
+  if (number < 0) {
+    return (unsigned long long)(-(number + 1)) + 1ULL;
+  }
+  return (unsigned long long)number;
+}
+
+/**
+ * Number of zeros to print before the digits of an integer, and the total width
+ * of the field content. A precision of an integer is a minimum number of digits,
+ * so it never cuts a value short.
+ *
+ * @param p Precision and other flags of @p p.
+ * @param digits Number of digits of the value, 0 when nothing at all is printed
+ *               for it, which is what a precision of 0 gives for a zero value.
+ * @param padding Set to the number of zeros to print before the digits.
+ *
+ * @return The total number of characters of the value, sign and prefix aside.
+ */
+static int integer_field(const struct DATA *p, size_t digits,
+    size_t *padding) {
+  *padding = 0;
+  if (p->precision > 0 && (size_t)p->precision > digits) {
+    *padding = (size_t)p->precision - digits;
+  }
+  return p->precision > (int)digits ? p->precision : (int)digits;
 }
 
 /**
@@ -509,8 +597,13 @@ static double integral(double real, double *ip) {
 #endif
 }
 
-/** Maximum size of the buffer for the digits of an integer. */
-#define MAX_INTEGRAL_SIZE (99 + 1)
+/**
+ * Maximum size of the buffer for the digits of an integer. The biggest value of
+ * an unsigned long long has 20 decimal, 16 hexadecimal and 22 octal digits, and
+ * the precision padding is printed from the output buffer, so a precision of any
+ * size fits.
+ */
+#define MAX_INTEGRAL_SIZE (22 + 1)
 
 /**
  * Maximum number of digits of the integral part of a double. The biggest
@@ -522,8 +615,6 @@ static double integral(double real, double *ip) {
 #endif
 /** Maximum size of the buffer for the integral part of a double. */
 #define MAX_FLOAT_INTEGRAL_SIZE (SNPRINTF_FLOAT_INTEGRAL_DIGITS + 2)
-/** Maximum precision of floating-point conversions, in digits. */
-#define MAX_PRECISION 29
 /** Maximum size of the buffer for the fraction part: %g needs 3 more digits. */
 #define MAX_FRACTION_SIZE (MAX_PRECISION + 3 + 1)
 
@@ -987,28 +1078,42 @@ static void emit_format_prefix(struct DATA *p, const char *prefix) {
   }
 }
 
+/**
+ * Subtract the length of the field content from DATA::width, without overflowing
+ * for a precision of any size.
+ */
+static void width_minus(struct DATA *p, long long content) {
+  p->width = content > INT_MAX ? INT_MIN : p->width - (int)content;
+}
+
 /** Format @p ll number as ASCII decimal string according to @p p flags. */
 static void decimal(struct DATA *p, long long ll) {
-  char number[MAX_INTEGRAL_SIZE];
-  const char *digits = number;
+  char number[MAX_INTEGRAL_SIZE], *pnumber = number;
   const int is_signed = *p->pf == 'i' || *p->pf == 'd';
   const int is_negative = is_signed && ll < 0;
+  const unsigned long long magnitude =
+      is_signed ? magnitude_of(ll) : (unsigned long long)ll;
+  size_t padding;
+  size_t digits = inttoa(magnitude, 10, number, sizeof(number));
   int sign = 0;
 
-  inttoa(ll, is_signed, p->precision, 10, number, sizeof(number));
+  if (p->precision == 0 && magnitude == 0) {
+    number[0] = '\0'; /* a precision of 0 prints nothing for a zero value */
+    digits = 0;
+  }
+  digits = (size_t)integer_field(p, digits, &padding);
 
   if (p->precision >= 0) { /* the '0' flag is ignored when precision is given */
     p->pad = ' ';
   }
 
   if (is_negative) {
-    digits = number + 1;
     sign = 1;
   } else if (is_signed && (p->is_plus || p->is_space)) {
     sign = 1; /* '+' and ' ' apply to signed conversions only */
   }
 
-  p->width -= (int)strlen(digits) + sign;
+  width_minus(p, (long long)digits + sign);
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     if (sign) {
       emit_sign_prefix(p, is_negative);
@@ -1022,8 +1127,10 @@ static void decimal(struct DATA *p, long long ll) {
     }
   }
 
-  for (; *digits != '\0'; digits++) {
-    PUT_CHAR(*digits, p);
+  PUT_REPEAT('0', p, padding);
+
+  for (; *pnumber != '\0'; pnumber++) {
+    PUT_CHAR(*pnumber, p);
   }
 
   PAD_LEFT(p);
@@ -1032,24 +1139,34 @@ static void decimal(struct DATA *p, long long ll) {
 /** Format @p ll number as ASCII octal string according to @p p flags. */
 static void octal(struct DATA *p, long long ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
+  const unsigned long long magnitude = (unsigned long long)ll;
   const char *prefix = NULL;
+  size_t padding;
+  size_t digits = inttoa(magnitude, 8, number, sizeof(number));
 
-  inttoa(ll, 0, p->precision, 8, number, sizeof(number));
+  if (p->precision == 0 && magnitude == 0) {
+    number[0] = '\0'; /* a precision of 0 prints nothing for a zero value */
+    digits = 0;
+  }
+  digits = (size_t)integer_field(p, digits, &padding);
 
   if (p->precision >= 0) { /* the '0' flag is ignored when precision is given */
     p->pad = ' ';
   }
 
   if (p->is_square) {
-    if (*number == '\0') {
-      number[0] = '0';
+    /* the '0' only forces a leading zero, so it is not printed when the value or
+       the precision already gives one */
+    if (digits == 0) {
+      number[0] = '0'; /* a zero value with a precision of 0 is one '0' */
       number[1] = '\0';
-    } else if (*number != '0') {
+      digits = 1;
+    } else if (padding == 0 && number[0] != '0') {
       prefix = "0";
     }
   }
 
-  p->width -= (int)strlen(number) + (prefix != NULL ? 1 : 0);
+  width_minus(p, (long long)digits + (prefix != NULL ? 1 : 0));
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
     PUT_REPEAT('0', p, p->width);
@@ -1058,6 +1175,8 @@ static void octal(struct DATA *p, long long ll) {
     PAD_RIGHT(p);
     emit_format_prefix(p, prefix);
   }
+
+  PUT_REPEAT('0', p, padding);
 
   for (; *pnumber != '\0'; pnumber++) {
     PUT_CHAR(*pnumber, p);
@@ -1069,19 +1188,27 @@ static void octal(struct DATA *p, long long ll) {
 /** Format @p ll number as ASCII hexadecimal string according to @p p flags. */
 static void hex(struct DATA *p, long long ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
+  const unsigned long long magnitude = (unsigned long long)ll;
   const char *prefix = NULL;
+  size_t padding;
+  size_t digits = inttoa(magnitude, 16, number, sizeof(number));
 
-  inttoa(ll, 0, p->precision, 16, number, sizeof(number));
+  if (p->precision == 0 && magnitude == 0) {
+    number[0] = '\0'; /* a precision of 0 prints nothing for a zero value */
+    digits = 0;
+  }
+  digits = (size_t)integer_field(p, digits, &padding);
 
   if (p->precision >= 0) { /* the '0' flag is ignored when precision is given */
     p->pad = ' ';
   }
 
-  if (p->is_square && ll != 0) { /* no "0x" prefix for a zero value */
+  if (p->is_square && magnitude != 0) { /* no "0x" prefix for a zero value */
     prefix = *p->pf == 'p' ? "0x" : (*p->pf == 'X' ? "0X" : "0x");
   }
 
-  p->width -= (int)strlen(number) + (prefix != NULL ? (int)strlen(prefix) : 0);
+  width_minus(p, (long long)digits +
+      (prefix != NULL ? (long long)strlen(prefix) : 0));
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
     PUT_REPEAT('0', p, p->width);
@@ -1090,6 +1217,8 @@ static void hex(struct DATA *p, long long ll) {
     PAD_RIGHT(p);
     emit_format_prefix(p, prefix);
   }
+
+  PUT_REPEAT('0', p, padding);
 
   for (; *pnumber != '\0'; pnumber++) {
     PUT_CHAR((*p->pf == 'X' ? (char)toupper(*pnumber) : *pnumber), p);
@@ -1308,13 +1437,22 @@ static void exponent(struct DATA *p, double d) {
     PUT_CHAR('E', p);
   }
 
-  if (log >= 0) { /* the sign of the exp */
-    PUT_CHAR('+', p);
-  }
+  PUT_CHAR(log >= 0 ? '+' : '-', p); /* the sign of the exp */
 
-  inttoa(log, 1, 2, 10, integral, sizeof(integral));
-  for (pintegral = integral; *pintegral != '\0'; pintegral++) { /* exponent */
-    PUT_CHAR(*pintegral, p);
+  /* the exponent, at least two digits and as many as it needs, which is the
+     exponent_digits computed above */
+  {
+    unsigned int value = (unsigned int)(log < 0 ? -log : log);
+    unsigned int divisor = 1;
+    int digit;
+    for (digit = 1; digit < exponent_digits; digit++) {
+      divisor *= 10;
+    }
+    for (digit = 0; digit < exponent_digits; digit++) {
+      PUT_CHAR((char)('0' + value / divisor), p);
+      value %= divisor;
+      divisor /= 10;
+    }
   }
 
   PAD_LEFT(p);
@@ -1407,15 +1545,28 @@ static int output_length(size_t count) {
   return count > (size_t)INT_MAX ? INT_MAX : (int)count;
 }
 
+#ifdef SNPRINTF_STRICT
+/**
+ * Report a validation failure of the strict mode, so that every rejection ends the
+ * same way: the buffer is terminated and -1 is returned.
+ */
+static int fail(struct DATA *p) {
+  terminate_buffer(p);
+  return -1;
+}
+#endif
+
 int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, va_list args) {
   struct DATA data;
 
-  /* Count the required output length without writing to a buffer. */
+  /* Count the required output length without writing to a buffer. A buffer of
+     zero bytes cannot even hold the '\0', so it is a measuring call, like the
+     C library treats it. */
+  if (length < 1) {
+    string = NULL;
+  }
   if (string == NULL) {
     length = __SIZE_MAX__;
-  /* A non-NULL output buffer must have nonzero capacity. */
-  } else if (length < 1) {
-    return -1;
   }
 
   data.ps_size = length - 1; /* leave room for '\0' */
@@ -1443,21 +1594,24 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
         switch (*(++data.pf)) {
           case '\0': /* The format string ended before a conversion specifier. */
 #ifdef SNPRINTF_STRICT
-            return -1;
+            return fail(&data);
 #endif
             PUT_CHAR('%', &data);
-            if (data.ps != NULL) {
-              *data.ps = '\0';
-            }
+            terminate_buffer(&data);
             return output_length(output_count(&data));
 
           case 'f':
           case 'F': { /* decimal floating point */
             double d;
-            DOUBLE_ARG(&data, d);
-            if (!special_float(&data, d)) {
-              floating(&data, d);
+            double_arg(&data, &args, &d);
+            if (special_float(&data, d)) { /* no precision needed for it */
+              is_continue = 0; /* the switch continues, the while loop does not */
+              break;
             }
+            if (limit_float_precision(&data) != 0) {
+              return -1;
+            }
+            floating(&data, d);
             is_continue = 0;
             break;
           }
@@ -1465,10 +1619,15 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'e':
           case 'E': { /* scientific (exponential) floating point */
             double d;
-            DOUBLE_ARG(&data, d);
-            if (!special_float(&data, d)) {
-              exponent(&data, d);
+            double_arg(&data, &args, &d);
+            if (special_float(&data, d)) { /* no precision needed for it */
+              is_continue = 0; /* the switch continues, the while loop does not */
+              break;
             }
+            if (limit_float_precision(&data) != 0) {
+              return -1;
+            }
+            exponent(&data, d);
             is_continue = 0;
             break;
           }
@@ -1477,14 +1636,15 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'G': { /* scientific or decimal floating point */
             int log;
             double d;
-            DOUBLE_ARG(&data, d);
-            if (special_float(&data, d)) {
-              is_continue = 0;
+            double_arg(&data, &args, &d);
+            if (special_float(&data, d)) { /* no precision needed for it */
+              is_continue = 0; /* the switch continues, the while loop does not */
               break;
             }
-            if (data.precision < 0) {
-              data.precision = 6;
-            } else if (data.precision == 0) {
+            if (limit_float_precision(&data) != 0) {
+              return -1;
+            }
+            if (data.precision == 0) {
               data.precision = 1;
             }
             log = rounded_exponent(d, data.precision);
@@ -1555,7 +1715,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
 #ifdef SNPRINTF_STRICT
             if (data.is_square || data.is_plus || data.is_space ||
                 data.pad == '0' || data.a_long != INT_LEN_DEFAULT) {
-              return -1;
+              return fail(&data);
             }
 #endif
             WIDTH_AND_PRECISION_ARGS(&data);
@@ -1653,7 +1813,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
 
           default:
 #ifdef SNPRINTF_STRICT
-            return -1;
+            return fail(&data);
 #else
             /* is this an error ? maybe bail out */
             PUT_CHAR('%', &data);

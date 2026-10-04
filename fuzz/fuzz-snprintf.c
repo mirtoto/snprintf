@@ -19,8 +19,11 @@
  * (see snprintf.h) or because the C standard does not define it:
  *  - the # flag of %g and %G (glibc drops digits when rounding carries to the
  *    next power of ten, the C standard and this implementation do not),
- *  - a precision of a floating-point conversion above 29, and of an integer
- *    conversion above 60,
+ *  - a precision of a floating-point conversion above
+ *    SNPRINTF_FLOAT_PRECISION, which the implementation lowers, or refuses in
+ *    the strict mode,
+ *  - an integer precision above MAX_INTEGER_PRECISION, which the implementation
+ *    prints in full, but which does not fit in the buffers of this test,
  *  - a NULL string with a precision, the sign of NaN, the character '\0',
  *  - long double, wide characters, %a and %n.
  * The flags the C standard does not define for a conversion are used too, as
@@ -221,6 +224,10 @@ static long long int_value(void) {
   return rnd(2) && v != LLONG_MIN ? -v : v;
 }
 
+/** Digits of the biggest integer precision this test asks for, well above the
+    99 the implementation used to cut to, and small enough for its buffers. */
+#define MAX_INTEGER_PRECISION 300
+
 static int fuzz_integer(void) {
   static const char *lengths[] = {"", "hh", "h", "l", "ll", "z", "t", "j"};
   static const char conversions[] = "diuoxX";
@@ -231,7 +238,7 @@ static int fuzz_integer(void) {
   struct spec s;
   char fmt[128];
 
-  make_spec(&s, "-+ #0", 60, length, conversion);
+  make_spec(&s, "-+ #0", MAX_INTEGER_PRECISION, length, conversion);
   make_format(fmt, &s);
   sprintf(value_text, "%lld", v);
 

@@ -61,6 +61,12 @@ static int written_length(void) {
 #define RETURNED(whole, written) (whole)
 #endif
 
+/* Precision limit of the floating-point conversions, as in snprintf.c. The tests
+   which check the lowering of a bigger one have to follow it. */
+#ifndef SNPRINTF_FLOAT_PRECISION
+#define SNPRINTF_FLOAT_PRECISION 29
+#endif
+
 
 #if __GNUC__ >= 7
 #pragma GCC diagnostic push
@@ -89,8 +95,20 @@ MU_TEST(test_buffer_null) {
 }
 
 MU_TEST(test_buffer_length_0) {
+	// a buffer of zero bytes cannot even hold the '\0', so it is a measuring
+	// call, like the C library treats it
 	int ret = snprintf(msg, 0, "%d", 123);
-	TEST(-1, NULL, ret);
+	mu_assert_int_eq(3, ret);
+	mu_assert_int_eq(ret, snprintf(NULL, 0, "%d", 123));
+
+	// nothing is written, so a buffer of its own is not touched at all
+	char guard[8];
+	memset(guard, 0x5a, sizeof(guard));
+	ret = snprintf(guard, 0, "%s%s", "abcdefgh", "ijklmnop");
+	mu_assert_int_eq(16, ret);
+	for (size_t i = 0; i < sizeof(guard); i++) {
+		mu_check(guard[i] == 0x5a); /* not even a '\0' */
+	}
 }
 
 MU_TEST(test_buffer_length_1) {
@@ -604,6 +622,16 @@ MU_TEST(test_special_float_values) {
 	TEST(8, "    +inf", ret);
 	ret = snprintf(msg, sizeof(msg), "%-8F", -INFINITY);
 	TEST(8, "-INF    ", ret);
+
+	// an infinity and a not-a-number have no digits, so their output does not
+	// depend on the precision: it is neither lowered nor refused, in the strict
+	// mode either, like the C library does
+	ret = snprintf(msg, sizeof(msg), "%.500f", INFINITY);
+	TEST(3, "inf", ret);
+	ret = snprintf(msg, sizeof(msg), "%.500E", -INFINITY);
+	TEST(4, "-INF", ret);
+	ret = snprintf(msg, sizeof(msg), "%.500G", NAN);
+	TEST(3, "NAN", ret);
 }
 
 MU_TEST(test_extreme_format_width_and_precision) {
@@ -611,9 +639,6 @@ MU_TEST(test_extreme_format_width_and_precision) {
 		char output[8];
 		char canary;
 	} buffer;
-	char expected[32] = "1.25";
-	memset(expected + 4, '0', 27);
-	expected[31] = '\0';
 	buffer.canary = 'X';
 
 	const char *wide_format = "%2147483648s";
@@ -651,8 +676,27 @@ MU_TEST(test_extreme_format_width_and_precision) {
 	mu_assert_int_eq('X', buffer.canary);
 
 	const char *wide_precision_format = "%.2147483648f";
+#ifdef SNPRINTF_STRICT
+	// the strict mode refuses a precision it cannot give, instead of quietly
+	// lowering it to SNPRINTF_FLOAT_PRECISION as the default mode does below
 	ret = snprintf(msg, sizeof(msg), wide_precision_format, 1.25);
-	TEST(31, expected, ret);
+	mu_assert_int_eq(-1, ret);
+	mu_check(msg[0] == '\0'); // the buffer is terminated, so a caller can read it
+	// a measuring call is refused as well: its length would be the lowered one
+	mu_assert_int_eq(-1, snprintf(NULL, 0, wide_precision_format, 1.25));
+#else
+	// the default mode lowers it to SNPRINTF_FLOAT_PRECISION, 29 unless the
+	// project raised the limit when compiling snprintf.c
+	const size_t limit = SNPRINTF_FLOAT_PRECISION;
+	char clamped[SNPRINTF_FLOAT_PRECISION + 8];
+	char produced[SNPRINTF_FLOAT_PRECISION + 8];
+	memcpy(clamped, "1.25", 4);
+	memset(clamped + 4, '0', limit - 2);
+	clamped[limit + 2] = '\0';
+	ret = snprintf(produced, sizeof(produced), wide_precision_format, 1.25);
+	mu_assert_int_eq((int)(limit + 2), ret);
+	mu_check(strcmp(produced, clamped) == 0);
+#endif
 	ret = snprintf(msg, sizeof(msg), "%.*f", INT_MIN, 1.25);
 	TEST(8, "1.250000", ret);
 }
@@ -1374,6 +1418,114 @@ MU_TEST(test_long_output_is_reported_as_int_max) {
 	mu_assert_string_eq("   ", msg);
 }
 
+MU_TEST(test_integer_precision_of_any_size) {
+	char expected[512];
+	char big[512];
+	int ret;
+	int i;
+
+	// the precision of an integer is a minimum number of digits, and the
+	// padding is not cut to a fixed number of digits
+	for (i = 90; i <= 300; i += 7) {
+		memset(expected, '0', (size_t)i);
+		expected[i - 1] = '7';
+		expected[i] = '\0';
+		ret = snprintf(big, sizeof(big), "%.*d", i, 7);
+		mu_assert_int_eq(i, ret);
+		mu_assert_string_eq(expected, big);
+	}
+
+	// the sign is not a digit of the precision
+	ret = snprintf(big, sizeof(big), "%.120d", -7);
+	mu_assert_int_eq(121, ret);
+	mu_check(big[0] == '-');
+	memset(expected, '0', 119);
+	expected[119] = '7';
+	expected[120] = '\0';
+	mu_assert_string_eq(expected, big + 1);
+
+	// and the same for the hexadecimal and the octal conversions
+	ret = snprintf(big, sizeof(big), "%.110X", 255u);
+	mu_assert_int_eq(110, ret);
+	mu_assert_int_eq('F', big[109]);
+
+	// a precision of an octal number gives the leading zero of the '#' flag,
+	// so the '#' does not add another one
+	unsigned long long u = (unsigned long long)-18;
+	const char *digits = "1777777777777777777756"; /* 2^64 - 18 in octal */
+	ret = snprintf(big, sizeof(big), "%#.25llo", u);
+	mu_assert_int_eq(25, ret);
+	strcpy(expected, "000");
+	strcat(expected, digits);
+	mu_assert_string_eq(expected, big);
+
+	// the precision is a minimum, so it never cuts the value short
+	ret = snprintf(big, sizeof(big), "%#.3llo", u);
+	mu_assert_int_eq(23, ret);
+	strcpy(expected, "0");
+	strcat(expected, digits);
+	mu_assert_string_eq(expected, big);
+
+	// and the '#' adds no zero when the precision already gives one
+	// 'o' with the 'll' modifier reads an unsigned long long, so 8u would be
+	// read as a wider argument, which only works by luck on some ABIs
+	ret = snprintf(big, sizeof(big), "%#.3llo", (unsigned long long)8u);
+	mu_assert_int_eq(3, ret);
+	mu_assert_string_eq("010", big);
+}
+
+MU_TEST(test_biggest_unsigned_long_long_in_every_base) {
+	char big[64];
+
+	// the biggest value has 20 decimal, 22 octal and 16 hexadecimal digits, so
+	// the buffer for the digits has to be big enough for the octal ones
+	mu_assert_int_eq(20, snprintf(big, sizeof(big), "%llu", ULLONG_MAX));
+	mu_assert_string_eq("18446744073709551615", big);
+
+	mu_assert_int_eq(22, snprintf(big, sizeof(big), "%llo", ULLONG_MAX));
+	mu_assert_string_eq("1777777777777777777777", big);
+
+	mu_assert_int_eq(16, snprintf(big, sizeof(big), "%llx", ULLONG_MAX));
+	mu_assert_string_eq("ffffffffffffffff", big);
+
+	mu_assert_int_eq(22, snprintf(big, sizeof(big), "%llo", ULLONG_MAX - 1));
+	mu_assert_string_eq("1777777777777777777776", big);
+
+	// with a precision of exactly the number of the digits of the value
+	mu_assert_int_eq(23, snprintf(big, sizeof(big), "%.23llo", ULLONG_MAX));
+	mu_check(big[0] == '0');
+	mu_assert_string_eq("01777777777777777777777", big);
+}
+
+#ifdef SNPRINTF_STRICT
+MU_TEST(test_strict_mode_terminates_the_buffer_on_failure) {
+	// a rejected format must still terminate the buffer, or a caller which
+	// checks the result for -1 reads past the end of it
+	struct {
+		char text[32];
+		unsigned char guard[8];
+	} b;
+	size_t i;
+
+	static const char *const formats[] = {
+		"ok %y", "ok %-", "ok %+s", "ok %Lg", "ok %ad", "ok %#s", "ok %ls",
+		"ok %05s", "ok %y%y", "ok %1$d", "ok %",
+	};
+
+	for (size_t f = 0; f < sizeof formats / sizeof *formats; f++) {
+		int ret;
+		memset(&b, 0x5a, sizeof(b));
+		ret = snprintf(b.text, sizeof(b.text), formats[f], 7,
+		    (const char *)"x", 1.5);
+		mu_assert_int_eq(-1, ret);
+		mu_assert_string_eq("ok ", b.text); /* terminated after the text */
+		for (i = 0; i < sizeof(b.guard); i++) {
+			mu_check(b.guard[i] == 0x5a);
+		}
+	}
+}
+#endif
+
 MU_TEST(test_counters) {
 	int counter1 = 0, counter2 = 0;
 	int ret = snprintf(msg, sizeof(msg), "%s%n %s%n%c",
@@ -1558,6 +1710,11 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_counter_is_the_whole_length_when_truncated);
 	MU_RUN_TEST(test_counter_reached_after_a_truncation);
 	MU_RUN_TEST(test_long_output_is_reported_as_int_max);
+	MU_RUN_TEST(test_integer_precision_of_any_size);
+	MU_RUN_TEST(test_biggest_unsigned_long_long_in_every_base);
+#ifdef SNPRINTF_STRICT
+	MU_RUN_TEST(test_strict_mode_terminates_the_buffer_on_failure);
+#endif
 }
 
 

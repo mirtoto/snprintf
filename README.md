@@ -22,10 +22,10 @@ int snprintf(char *string, size_t length, const char *format, ...);
 
 ### Parameters
 
-| Parameter | Description                                                                                                         |
-| --------- | ------------------------------------------------------------------------------------------------------------------- |
-| `string`  | Output buffer. If `NULL`, nothing is written, `length` is ignored and the function calculates the output length.    |
-| `length`  | Size of the output buffer, including the terminating null byte: at most `length - 1` characters are written.        |
+| Parameter | Description                                                                                                                                  |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `string`  | Output buffer. If `NULL`, nothing is written, `length` is ignored and the function calculates the output length.                             |
+| `length`  | Size of the output buffer, including the terminating null byte: at most `length - 1` characters are written. `0` only measures the output.   |
 | `format`  | Format string controlling the output.                                                                               |
 | `...`     | Variadic arguments consumed by the format string.                                                                   |
 
@@ -34,7 +34,7 @@ int snprintf(char *string, size_t length, const char *format, ...);
 | Value  | Meaning                                                                                                                                                  |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `>= 0` | Number of characters of the whole output, not counting the terminating null byte, also when the output is truncated. An output longer than `INT_MAX` is reported as `INT_MAX`. With `SNPRINTF_LEGACY_LENGTH` it is the number of characters written, that is `length - 1`, for a truncated output. |
-| `-1`   | `string` is not `NULL` and `length` is `0`, or a strict-mode validation failure.                                                                         |
+| `-1`   | A strict-mode validation failure.                                                                                                                        |
 
 This is the same as the C99 `snprintf()` returns, so a caller can tell that the output was truncated and retry with a bigger buffer. To find out the size of a buffer up front, call the function with a `NULL` `string`.
 
@@ -119,6 +119,7 @@ make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g" LIBRARI
 | `SNPRINTF_LEGACY_LENGTH`         | Return and store the number of characters written into the buffer instead of the length of the whole output, as before version 3.2.                                                |
 | `SNPRINTF_USE_MATH`              | Use `modf()` and `signbit()` of `math.h`.                                                                                                                                                |
 | `SNPRINTF_FLOAT_INTEGRAL_DIGITS` | Digits of the integral part of a `double`, `309` by default, which is enough for every `double`. A smaller number saves stack, but bigger numbers are then printed as a row of nines. Set it when compiling `snprintf.c`. |
+| `SNPRINTF_FLOAT_PRECISION`       | Digits of the precision of `%e`, `%E`, `%f`, `%F`, `%g` and `%G`, `29` by default. The C standard asks for at least `999`, so set it higher, e.g. to `999`, to be conformant. The stack grows by about 3 bytes per digit for `%e` and `%f`, and by about 4 for `%g`. A bigger precision is lowered to this one, or fails with `-1` in the strict mode. Set it when compiling `snprintf.c`. |
 
 ## Supported format specifiers
 
@@ -168,13 +169,13 @@ Both are decimal numbers or a star. A negative width from a star is the `-` flag
 
 | Conversion           | Precision                                                                  |
 | -------------------- | -------------------------------------------------------------------------- |
-| integers             | minimal number of digits, the digits and the sign are cut to 99 characters |
-| `f` / `F`            | digits after the point, 6 by default, 29 at most                           |
-| `e` / `E`            | digits after the point, 6 by default, 29 at most                           |
-| `g` / `G`            | significant digits, 6 by default, 29 at most                               |
+| integers             | minimal number of digits, the digits and the sign are not cut             |
+| `f` / `F`            | digits after the point, 6 by default, `SNPRINTF_FLOAT_PRECISION` at most  |
+| `e` / `E`            | digits after the point, 6 by default, `SNPRINTF_FLOAT_PRECISION` at most  |
+| `g` / `G`            | significant digits, 6 by default, `SNPRINTF_FLOAT_PRECISION` at most       |
 | `s`                  | maximal number of characters                                               |
 
-A bigger precision of a floating-point conversion is lowered to 29.
+A bigger precision of a finite floating-point conversion is lowered to `SNPRINTF_FLOAT_PRECISION`, which is 29 by default, or fails with `-1` in the strict mode. An infinity and a not-a-number have no digits, so their precision changes nothing and is never lowered or refused. The C standard asks for at least 999 digits, so compile with `-DSNPRINTF_FLOAT_PRECISION=999` to be conformant.
 
 ### Floating-point conversions
 
@@ -182,7 +183,7 @@ The digits are those of the exact binary value of the `double`, rounded to neare
 
 Infinity is printed as `inf` and not a number as `nan`, in capitals for `F`, `E` and `G`, and the `0` flag is ignored for them. The sign of NaN is not printed. Negative zero is printed with a minus sign.
 
-The conversion uses integer arithmetic only. Its cost is some stack: `floating()` needs about 600 bytes with the default 309 digits, and about 250 bytes with `-DSNPRINTF_FLOAT_INTEGRAL_DIGITS=40`.
+The conversion uses integer arithmetic only. Its cost is some stack: `floating()` needs about 600 bytes with the default 309 digits, and about 250 bytes with `-DSNPRINTF_FLOAT_INTEGRAL_DIGITS=40`. `SNPRINTF_FLOAT_PRECISION` adds about 3 bytes per digit on top of that, so `-DSNPRINTF_FLOAT_PRECISION=999` needs about 3.7 kB for `%e` and about 4.8 kB for `%g`, which measures the exponent first.
 
 ## Testing
 

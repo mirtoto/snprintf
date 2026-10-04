@@ -100,14 +100,18 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  * 
  *  Conversion  | Precision
  * ------------ | ----------------------------------------
- *  integers    | minimal number of digits, the digits and the sign are cut
- *              | to 99 characters
- *  f / F       | digits after the point, 6 by default, 29 at most
- *  e / E       | digits after the point, 6 by default, 29 at most
- *  g / G       | significant digits, 6 by default, 29 at most
+ *  integers    | minimal number of digits, the digits and the sign are not cut
+ *  f / F       | digits after the point, 6 by default,
+ *              | SNPRINTF_FLOAT_PRECISION at most
+ *  e / E       | digits after the point, 6 by default,
+ *              | SNPRINTF_FLOAT_PRECISION at most
+ *  g / G       | significant digits, 6 by default,
+ *              | SNPRINTF_FLOAT_PRECISION at most
  *  s           | maximal number of characters
  * 
- * A bigger precision of a floating-point conversion is lowered to 29.
+ * A bigger precision of a finite floating-point conversion is lowered to
+ * SNPRINTF_FLOAT_PRECISION, or fails with -1 in the strict mode. The precision of
+ * an infinity or a not-a-number changes nothing, so it is never lowered.
  * 
  * # Floating-point conversions
  * 
@@ -153,10 +157,20 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *                                  | 309 by default, a smaller number saves
  *                                  | stack but bigger numbers are printed as
  *                                  | a row of nines, set it for snprintf.c
+ *  SNPRINTF_FLOAT_PRECISION        | digits of the precision of %e, %E, %f,
+ *                                  | %F, %g and %G, 29 by default. The C
+ *                                  | standard asks for at least 999, so set
+ *                                  | this higher, e.g. to 999, at the cost of
+ *                                  | the stack, which grows by about 3 bytes
+ *                                  | per digit for %e and %f and by about 4
+ *                                  | for %g. A bigger precision is lowered to
+ *                                  | this one, or fails in the strict mode,
+ *                                  | set it for snprintf.c
  * 
  * @param string Output buffer, or NULL to calculate the length of the output.
  * @param length Size of the output buffer @p string, including the terminating
- *               '\0'. At most @p length - 1 characters are written.
+ *               '\0'. At most @p length - 1 characters are written. A length of
+ *               0 measures the output without writing it.
  * @param format Format of input parameters.
  * @param ... Input parameters according of @p format.
  * 
@@ -165,8 +179,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *             longer than INT_MAX is reported as INT_MAX. With
  *             SNPRINTF_LEGACY_LENGTH it is the number of characters written,
  *             that is @p length - 1, for a truncated output.
- * @retval  -1 The @p string is not NULL and @p length is 0, or the strict mode
- *             does not accept the @p format.
+ * @retval  -1 The strict mode does not accept the @p format.
  */
 int SNPRINTF_PREFIX(snprintf)(char *string, size_t length, const char *format, ...)
 #if !defined(__MINGW32__)
