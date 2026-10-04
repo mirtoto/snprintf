@@ -710,6 +710,17 @@ MU_TEST(test_special_float_values) {
 	TEST(4, "-INF", ret);
 	ret = snprintf(msg, sizeof(msg), "%.500G", NAN);
 	TEST(3, "NAN", ret);
+
+	// the sign of a NaN is not printed, glibc prints it
+	volatile double negative_nan = -NAN;
+	ret = snprintf(msg, sizeof(msg), "%f %E %G", negative_nan, negative_nan,
+	    negative_nan);
+	TEST(11, "nan NAN NAN", ret);
+
+	// an infinity does keep its sign
+	ret = snprintf(msg, sizeof(msg), "%f %e %g", -INFINITY, -INFINITY,
+	    -INFINITY);
+	TEST(14, "-inf -inf -inf", ret);
 }
 
 MU_TEST(test_extreme_format_width_and_precision) {

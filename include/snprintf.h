@@ -131,6 +131,8 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *  - %s of a NULL pointer prints (null), whole or cut by the precision, and a
  *    precision below its 6 characters prints nothing at all, which is what
  *    glibc does.
+ *  - The sign of a NaN is not printed, so a negative one gives nan, where
+ *    glibc gives -nan. An infinity keeps its sign.
  *  - The length modifier l is ignored by %s and %c, there are no wide
  *    characters. The strict mode rejects a length modifier on both of them,
  *    and on %s the flags the standard does not define there as well, and
