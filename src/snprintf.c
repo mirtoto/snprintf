@@ -1234,15 +1234,30 @@ static void hex(struct DATA *p, long long ll) {
   PAD_LEFT(p);
 }
 
+/**
+ * Number of characters of the "(null)" which stands for a NULL string, without
+ * the terminating '\0'.
+ *
+ * The C library prints it whole when there is no precision, and prints nothing
+ * at all for a precision below this length, so a smaller precision gives an
+ * empty string and not a cut "(null)".
+ */
+#define NULL_STRING_LENGTH 6
+
 /** Format @p str string according to @p p flags. */
 static void strings(struct DATA *p, const char *s) {
-  const char *src = s == NULL ? "(null)" : s;
+  const char *src = s;
   size_t len = 0;
   size_t padding = 0;
   size_t available;
   size_t copy_length;
 
   p->pad = ' '; /* the '0' flag is undefined for strings; libc pads with blanks */
+
+  if (src == NULL) {
+    src = p->precision < 0 || p->precision >= NULL_STRING_LENGTH ?
+        "(null)" : "";
+  }
 
   if (p->precision >= 0) {
     while (len < (size_t)p->precision && src[len] != '\0') {

@@ -788,6 +788,31 @@ MU_TEST(test_string_null_pointer) {
 	const char *str = NULL;
 	int ret = snprintf(msg, sizeof(msg), "%s", str);
 	TEST(6, "(null)", ret);
+
+	// a precision below the length of the "(null)" prints nothing, like libc
+	ret = snprintf(msg, sizeof(msg), "%.0s", str);
+	TEST(0, "", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.3s", str);
+	TEST(0, "", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.5s", str);
+	TEST(0, "", ret);
+
+	// a precision of its length, or more, gives it whole
+	ret = snprintf(msg, sizeof(msg), "%.6s", str);
+	TEST(6, "(null)", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.9s", str);
+	TEST(6, "(null)", ret);
+
+	// the width still pads an empty string
+	ret = snprintf(msg, sizeof(msg), "%8.3s|", str);
+	TEST(9, "        |", ret);
+
+	// a negative precision from a star is no precision at all
+	ret = snprintf(msg, sizeof(msg), "%.*s", -1, str);
+	TEST(6, "(null)", ret);
 }
 
 MU_TEST(test_string) {

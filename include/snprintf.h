@@ -127,7 +127,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *  - %g and %G with the # flag always print as many significant digits as the
  *    precision says, also when rounding makes the number a power of ten, as
  *    the C standard requires (glibc prints 1.e+06 for 999999.5).
- *  - %s of a NULL pointer prints (null), cut by the precision.
+ *  - %s of a NULL pointer prints (null), whole or cut by the precision, and a
+ *    precision below its 6 characters prints nothing at all, which is what
+ *    glibc does.
  *  - The length modifier l is ignored by %s and %c, there are no wide
  *    characters. The strict mode rejects it on %s, like the flags the
  *    standard does not define there, and fails.

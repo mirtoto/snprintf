@@ -24,7 +24,7 @@
  *    the strict mode,
  *  - an integer precision above MAX_INTEGER_PRECISION, which the implementation
  *    prints in full, but which does not fit in the buffers of this test,
- *  - a NULL string with a precision, the sign of NaN, the character '\0',
+ *  - the sign of NaN, the character '\0',
  *  - long double, wide characters, %a and %n.
  * The flags the C standard does not define for a conversion are used too, as
  * long as the C library gives them a meaning that is the same everywhere.
@@ -272,8 +272,8 @@ static int fuzz_string(void) {
 #endif
   make_format(fmt, &s);
   v = pool[rnd(6)];
-  if (strchr(s.text, '.') == NULL && rnd(8) == 0) {
-    v = NULL;
+  if (rnd(8) == 0) {
+    v = NULL; /* a precision below 6 gives an empty string, like the C library */
   }
   sprintf(value_text, "%s", v != NULL ? v : "NULL");
   return CALL(fmt, s, v);
