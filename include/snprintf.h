@@ -137,6 +137,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    characters. The strict mode rejects a length modifier on both of them,
  *    and on %s the flags the standard does not define there as well, and
  *    fails.
+ *  - The precision of the floating-point conversions is limited to
+ *    SNPRINTF_FLOAT_PRECISION digits, 29 by default. A bigger one is lowered
+ *    to it, or refused with -1 in the strict mode.
  *  - The integral part of a floating-point number is limited to
  *    SNPRINTF_FLOAT_INTEGRAL_DIGITS digits, 309 by default and enough for every
  *    double. A smaller value saves stack, and a number with a longer integral
