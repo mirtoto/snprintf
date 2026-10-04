@@ -146,9 +146,10 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    part is then printed as a row of nines, with the exponent of %e and %g
  *    taken from the biggest number that fits.
  *  - Not supported are the length modifier L (long double), the conversions
- *    a and A, and numbered arguments like %1$d. Only the % is printed:
- *    everything from it to the unsupported character goes with it, and the
- *    rest of the format is text, so %5k prints %, %La prints %a and %1$d
+ *    a and A, the extensions of other C libraries like %' for grouping and %m
+ *    for the strerror string, and numbered arguments like %1$d. Only the % is
+ *    printed: everything from it to the unsupported character goes with it, and
+ *    the rest of the format is text, so %5k prints %, %La prints %a and %1$d
  *    prints %d. No argument is used, so a conversion after it reads the
  *    argument the unsupported one would have had. In the strict mode the
  *    function fails.
