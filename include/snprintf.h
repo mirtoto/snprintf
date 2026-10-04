@@ -136,9 +136,12 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    and on %s the flags the standard does not define there as well, and
  *    fails.
  *  - Not supported are the length modifier L (long double), the conversions
- *    a and A, and numbered arguments like %1$d. A percent character is
- *    printed, the unsupported character is skipped, the rest is printed as
- *    text and no argument is used. In the strict mode the function fails.
+ *    a and A, and numbered arguments like %1$d. Only the % is printed:
+ *    everything from it to the unsupported character goes with it, and the
+ *    rest of the format is text, so %5k prints %, %La prints %a and %1$d
+ *    prints %d. No argument is used, so a conversion after it reads the
+ *    argument the unsupported one would have had. In the strict mode the
+ *    function fails.
  * 
  *  With SNPRINTF_LEGACY_LENGTH the result of a truncated output is the number
  *  of characters written instead of the length of the whole output, and %n

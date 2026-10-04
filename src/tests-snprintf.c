@@ -196,6 +196,50 @@ MU_TEST(test_wrong_format_unsupported_type) {
 	TEST(4, "123%", ret);
 }
 
+MU_TEST(test_unsupported_specifier_drops_the_whole_specifier) {
+	// only the % survives: everything from it to the unsupported character goes
+	// with it, and the rest of the format is text
+	int ret = snprintf(msg, sizeof(msg), "%a %A", 1.5, 1.5);
+	TEST(3, "% %", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%L", 1.5);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%La", 1.5);
+	TEST(2, "%a", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%Lf%Lg", 1.5, 1.5);
+	TEST(4, "%f%g", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%Ld2", 7);
+	TEST(3, "%d2", ret);
+
+	// the width and the precision are dropped as well
+	ret = snprintf(msg, sizeof(msg), "%5k", 7);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.3k", 7);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%-#5.2k", 7);
+	TEST(1, "%", ret);
+
+	// a numbered argument drops its width, and the conversion behind it is text
+	ret = snprintf(msg, sizeof(msg), "%1$d", 7);
+	TEST(2, "%d", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%2$s", 7, "ab");
+	TEST(2, "%s", ret);
+
+	// no argument is used, so the conversion behind reads the one of the
+	// unsupported specifier
+	ret = snprintf(msg, sizeof(msg), "%a %d", 7, 42);
+	TEST(3, "% 7", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*k %d", 5, 42);
+	TEST(3, "% 5", ret);
+}
+
 MU_TEST(test_plus_flag_and_left_align) {
 	int ret = snprintf(msg, sizeof(msg), "%+-10d", 123);
 	TEST(10, "+123      ", ret);
@@ -1655,6 +1699,9 @@ MU_TEST_SUITE(test_suite) {
 
 	MU_RUN_TEST(test_wrong_format_no_type);
 	MU_RUN_TEST(test_wrong_format_unsupported_type);
+#ifndef SNPRINTF_STRICT
+	MU_RUN_TEST(test_unsupported_specifier_drops_the_whole_specifier);
+#endif
 	MU_RUN_TEST(test_plus_flag_and_left_align);
 #ifndef SNPRINTF_STRICT
 	MU_RUN_TEST(test_malformed_format_standard_like);

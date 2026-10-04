@@ -88,7 +88,7 @@ This is a good default for portability and compatibility, but it is not a safety
 - `%s` of a `NULL` pointer prints `(null)`, whole or cut by the precision, but a precision below its 6 characters prints nothing at all, which is what glibc does.
 - The length modifier `l` is ignored by `%s` and `%c`: there are no wide characters. The strict mode rejects a length modifier on both of them, and on `%s` also the flags the standard does not define there, and returns `-1`.
 - The precision is limited, see [Width and precision](#width-and-precision).
-- Not supported are the length modifier `L` (`long double`), the conversions `a` and `A`, and numbered arguments like `%1$d`. A percent character is printed, the unsupported character is skipped, the rest is printed as text and no argument is used. In strict mode the function returns `-1`.
+- Not supported are the length modifier `L` (`long double`), the conversions `a` and `A`, and numbered arguments like `%1$d`. Only the `%` is printed: everything from it to the unsupported character goes with it, and the rest of the format is text, so `%5k` prints `%`, `%La` prints `%a` and `%1$d` prints `%d`. No argument is used, so a conversion after it reads the argument the unsupported one would have had. In strict mode the function returns `-1`.
 
 ### Optional strict mode
 
