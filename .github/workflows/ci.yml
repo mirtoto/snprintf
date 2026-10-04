@@ -38,8 +38,6 @@ jobs:
   test-32bit:
     name: gcc 32 bits ${{ matrix.fp }}
     runs-on: ubuntu-latest
-    # Nobody has run the 32-bit builds yet. Remove this line when they pass.
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
