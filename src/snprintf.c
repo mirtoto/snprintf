@@ -396,17 +396,22 @@ static void terminate_buffer(struct DATA *p) {
  * precision. A precision which is not given becomes the default one of 6, but a
  * bigger one is only limited later, by limit_float_precision().
  *
+ * It is a macro, like INTEGER_ARG(), and not a function taking a va_list *,
+ * because va_list is an array type where __va_list_tag[1] is what gcc and clang
+ * use on x86-64. There &args of a va_list parameter is a __va_list_tag **, which
+ * is not a va_list *, and passing it to a function would not compile. Reading the
+ * va_list where it is, as the macros above do, is portable.
+ *
  * @param p DATA of the conversion.
- * @param args Arguments of the format, advanced over the stars and the double.
- * @param d Set to the argument.
+ * @param d Set to the argument. The width, the precision and the double are
+ *          taken from the args of the caller.
  */
-static void double_arg(struct DATA *p, va_list *args, double *d) {
-  WIDTH_AND_PRECISION_ARGS_IN(p, *args);
-  if (p->precision == PRECISION_UNSET) {
-    p->precision = 6;
-  }
-  *d = va_arg(*args, double);
-}
+#define DOUBLE_ARG(p, d)                                  \
+  WIDTH_AND_PRECISION_ARGS(p);                            \
+  if ((p)->precision == PRECISION_UNSET) {                \
+    (p)->precision = 6;                                   \
+  }                                                       \
+  (d) = va_arg(args, double);
 
 /**
  * Limit the precision of a floating-point conversion to MAX_PRECISION, which is
@@ -1603,7 +1608,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'f':
           case 'F': { /* decimal floating point */
             double d;
-            double_arg(&data, &args, &d);
+            DOUBLE_ARG(&data, d);
             if (special_float(&data, d)) { /* no precision needed for it */
               is_continue = 0; /* the switch continues, the while loop does not */
               break;
@@ -1619,7 +1624,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'e':
           case 'E': { /* scientific (exponential) floating point */
             double d;
-            double_arg(&data, &args, &d);
+            DOUBLE_ARG(&data, d);
             if (special_float(&data, d)) { /* no precision needed for it */
               is_continue = 0; /* the switch continues, the while loop does not */
               break;
@@ -1636,7 +1641,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           case 'G': { /* scientific or decimal floating point */
             int log;
             double d;
-            double_arg(&data, &args, &d);
+            DOUBLE_ARG(&data, d);
             if (special_float(&data, d)) { /* no precision needed for it */
               is_continue = 0; /* the switch continues, the while loop does not */
               break;
