@@ -101,6 +101,8 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *  Conversion  | Precision
  * ------------ | ----------------------------------------
  *  integers    | minimal number of digits, the digits and the sign are not cut
+ *  p           | minimal number of hex digits, a NULL pointer prints (nil),
+ *              | which a smaller precision does not cut
  *  f / F       | digits after the point, 6 by default,
  *              | SNPRINTF_FLOAT_PRECISION at most
  *  e / E       | digits after the point, 6 by default,

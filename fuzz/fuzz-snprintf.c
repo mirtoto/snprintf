@@ -297,7 +297,9 @@ static int fuzz_pointer(void) {
   char fmt[128];
   void *v = (void *)pool[rnd(6)];
 
-  make_spec(&s, "-", -1, "", 'p');
+  /* a precision is the minimum number of hex digits; a NULL pointer
+     prints "(nil)", which a precision below its length does not cut */
+  make_spec(&s, "-", 40, "", 'p');
   make_format(fmt, &s);
   sprintf(value_text, "%p", v);
   return CALL(fmt, s, v);

@@ -1244,6 +1244,15 @@ static void hex(struct DATA *p, long long ll) {
  */
 #define NULL_STRING_LENGTH 6
 
+/**
+ * Number of characters of the "(nil)" which stands for a NULL
+ * pointer, without the terminating '\0'.
+ *
+ * The C library prints it whole, a precision below this length
+ * does not cut it.
+ */
+#define NULL_POINTER_LENGTH 5
+
 /** Format @p str string according to @p p flags. */
 static void strings(struct DATA *p, const char *s) {
   const char *src = s;
@@ -1480,7 +1489,14 @@ static void exponent(struct DATA *p, double d) {
   PAD_LEFT(p);
 }
 
-/** Initialize and parse the conversion specifiers. */
+/**
+ * Initialize and parse the flags, the width and the precision of
+ * a conversion specifier.
+ *
+ * @p p->pf points at the first character after the '%' on entry
+ * and at the character before the conversion specifier on exit,
+ * which the caller reprocesses.
+ */
 static void conv_flags(struct DATA *p) {
   p->width = WIDTH_UNSET;
   p->precision = PRECISION_UNSET;
@@ -1549,8 +1565,6 @@ static void conv_flags(struct DATA *p) {
         break;
 
       case '%':
-        return;
-
       default:
         p->pf--; /* Reprocess this character as the conversion specifier. */
         return;
@@ -1611,6 +1625,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
 #endif
     if (*data.pf == '%') { /* Start parsing a conversion specifier. */
       int is_continue = 1;
+      data.pf++; /* the '%' itself, the flags follow it */
       conv_flags(&data); /* initialise format flags */
       while (*data.pf != '\0' && is_continue) {
         switch (*(++data.pf)) {
@@ -1758,6 +1773,11 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             void *v = va_arg(args, void *);
             data.is_square = 1;
             if (v == NULL) {
+              /* The C library prints the whole "(nil)", a precision
+                 below its length does not cut it. */
+              if (data.precision < NULL_POINTER_LENGTH) {
+                data.precision = NULL_POINTER_LENGTH;
+              }
               strings(&data, "(nil)");
             } else {
               hex(&data, (long long)(uintptr_t)v); /* no sign extension */
@@ -1767,6 +1787,10 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
           }
 
           case 'n': /* Store the output count using the requested integer type. */
+            /* The C library reads the width and the precision
+               arguments, a star is consumed even though it
+               changes nothing. */
+            WIDTH_AND_PRECISION_ARGS(&data);
             switch (data.a_long) {
               case INT_LEN_CHAR:
                 *va_arg(args, signed char *) = (signed char)output_count(&data);
@@ -1818,6 +1842,10 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
             break;
 
           case '%': /* nothing just % */
+            /* The C library reads the width and the precision
+               arguments, a star is consumed even though it
+               changes nothing. */
+            WIDTH_AND_PRECISION_ARGS(&data);
             PUT_CHAR('%', &data);
             is_continue = 0;
             break;

@@ -1020,6 +1020,56 @@ MU_TEST(test_pointer_null) {
 	TEST(5, "(nil)", ret);
 }
 
+MU_TEST(test_pointer_null_precision) {
+	// the C library prints the whole "(nil)", a precision
+	// below its length does not cut it
+	int ret = snprintf(msg, sizeof(msg), "%.0p", (void *)0);
+	TEST(5, "(nil)", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.3p", (void *)0);
+	TEST(5, "(nil)", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.4p", (void *)0);
+	TEST(5, "(nil)", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.5p", (void *)0);
+	TEST(5, "(nil)", ret);
+
+	// a precision above the length changes nothing
+	ret = snprintf(msg, sizeof(msg), "%.9p", (void *)0);
+	TEST(5, "(nil)", ret);
+
+	// a star and a negative precision from a star are
+	// no precision at all, the whole string is printed too
+	ret = snprintf(msg, sizeof(msg), "%.*p", 3, (void *)0);
+	TEST(5, "(nil)", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.*p", -3, (void *)0);
+	TEST(5, "(nil)", ret);
+
+	// a width pads around the whole string
+	ret = snprintf(msg, sizeof(msg), "%10.3p", (void *)0);
+	TEST(10, "     (nil)", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%-10.3p", (void *)0);
+	TEST(10, "(nil)     ", ret);
+
+	// the length of the whole output is reported
+	ret = snprintf(NULL, 0, "%.3p", (void *)0);
+	mu_assert_int_eq(5, ret);
+}
+
+MU_TEST(test_pointer_precision) {
+	// the precision of a pointer is the minimum number of
+	// hexadecimal digits, like the %#x the C library prints
+	void *p = (void *)0x1234;
+	int ret = snprintf(msg, sizeof(msg), "%.4p", p);
+	TEST(6, "0x1234", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.10p", p);
+	TEST(12, "0x0000001234", ret);
+}
+
 MU_TEST(test_pointer) {
 #if UINTPTR_MAX > 0xffffffffu
     int ret = snprintf(msg, sizeof(msg), "%p", (void *)0x12345678aabbccdd);
@@ -1046,6 +1096,43 @@ MU_TEST(test_percent) {
 	const char *str = "%%%%% Hello World! %%%%%";
 	int ret = snprintf(msg, sizeof(msg), "%%%%%%%%%% Hello World! %%%%%%%%%%");
 	TEST((int)strlen(str), str, ret);
+}
+
+MU_TEST(test_percent_flags) {
+	// the C library reads the flags, the width and the
+	// precision of a percent sign and prints it, a star
+	// argument is consumed even though it changes nothing
+	int ret = snprintf(msg, sizeof(msg), "%#%");
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%-5%");
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.%");
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%5%");
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*%", 5);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.*%", 5);
+	TEST(1, "%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*.*%", 5, 3);
+	TEST(1, "%", ret);
+
+	// the consumed star arguments do not shift the ones of
+	// the conversions which follow
+	ret = snprintf(msg, sizeof(msg), "%*%d", 5, 42);
+	TEST(2, "%d", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.*%d", 5, 42);
+	TEST(2, "%d", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*.*%d", 5, 3, 42);
+	TEST(2, "%d", ret);
 }
 
 #if defined(__clang__)
@@ -1665,6 +1752,44 @@ MU_TEST(test_counters) {
 	mu_assert_int_eq(11, counter2);
 }
 
+MU_TEST(test_counter_star_arguments) {
+	// the C library reads the width and the precision
+	// of %n, a star argument is consumed even though
+	// it changes nothing, so it does not shift the
+	// arguments of the conversions which follow
+	int counter = -1;
+	int ret = snprintf(msg, sizeof(msg), "%*n", 5, &counter);
+	TEST(0, "", ret);
+	mu_assert_int_eq(0, counter);
+
+	counter = -1;
+	ret = snprintf(msg, sizeof(msg), "%.*n", 5, &counter);
+	TEST(0, "", ret);
+	mu_assert_int_eq(0, counter);
+
+	counter = -1;
+	ret = snprintf(msg, sizeof(msg), "%*.*n", 5, 3, &counter);
+	TEST(0, "", ret);
+	mu_assert_int_eq(0, counter);
+
+	counter = -1;
+	ret = snprintf(msg, sizeof(msg), "%*n%c", -5, &counter, 'x');
+	TEST(1, "x", ret);
+	mu_assert_int_eq(0, counter);
+
+	// a literal width and precision change nothing
+	counter = -1;
+	ret = snprintf(msg, sizeof(msg), "%5n", &counter);
+	TEST(0, "", ret);
+	mu_assert_int_eq(0, counter);
+
+	// the stored count is the one of the whole output
+	counter = -1;
+	ret = snprintf(msg, sizeof(msg), "abc%*n", 5, &counter);
+	TEST(3, "abc", ret);
+	mu_assert_int_eq(3, counter);
+}
+
 MU_TEST(test_counter_length_modifiers) {
 	struct {
 		signed char value;
@@ -1815,11 +1940,15 @@ MU_TEST_SUITE(test_suite) {
 #endif
 
 	MU_RUN_TEST(test_pointer_null);
+	MU_RUN_TEST(test_pointer_null_precision);
 	MU_RUN_TEST(test_pointer);
 	MU_RUN_TEST(test_pointer_width);
+	MU_RUN_TEST(test_pointer_precision);
 
 	MU_RUN_TEST(test_percent);
+	MU_RUN_TEST(test_percent_flags);
 	MU_RUN_TEST(test_counters);
+	MU_RUN_TEST(test_counter_star_arguments);
 	MU_RUN_TEST(test_counter_length_modifiers);
 
 	MU_RUN_TEST(test_unsigned_long_long_max);
