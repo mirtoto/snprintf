@@ -327,7 +327,7 @@ static size_t output_count(const struct DATA *p) {
  */
 static void terminate_buffer(struct DATA *p) {
   if (p->ps != NULL) {
-    p->ps[0] = '\0'; /* at most the '\0' slot, see DATA::ps_size */
+    p->ps[0] = '\0'; /* terminate at buffer start on format rejection */
   }
 }
 
@@ -557,7 +557,7 @@ static int has_minus(double d) {
 #ifdef SNPRINTF_USE_MATH
   return signbit(d) != 0;
 #else
-  return 1. / d < 0.; /* minus infinity for negative zero */
+  return 1. / d < 0.; /* IEEE 754: 1/-0.0 -> -inf (<0) */
 #endif
 }
 
@@ -921,7 +921,7 @@ static void floattoa(double number, int precision,
   /* do the integral part */
   i = integer_digits(ip, output_integral, output_integral_size - 1);
 
-  /* Oh No !! out of bound, ho well fill it up ! */
+  /* integral part exceeds buffer, fill with 9s */
   if (i == 0) {
     for (i = 0; i < output_integral_size - 1; ++i) {
       output_integral[i] = '9';
@@ -1002,7 +1002,7 @@ static void significant_digits(double value, size_t count, char *digits,
   if (ip >= 1.) { /* the digits come from the integral part first */
     int sticky = 0;
     if (!integer_top(ip, count, top, &n, &sticky)) {
-      for (i = 0; i < count; i++) { /* out of bound, fill it up ! */
+      for (i = 0; i < count; i++) { /* integral part exceeds buffer, fill with 9s */
         digits[i] = '9';
       }
       *exp10 = SNPRINTF_FLOAT_INTEGRAL_DIGITS - 1;
@@ -1086,8 +1086,8 @@ static void emit_format_prefix(struct DATA *p, const char *prefix) {
 }
 
 /**
- * Subtract the length of the field content from DATA::width, without overflowing
- * for a precision of any size.
+ * Subtract the length of the field content from DATA::width, saturating
+ * to INT_MIN for extreme precision values to avoid overflow.
  */
 static void width_minus(struct DATA *p, long long content) {
   p->width = content > INT_MAX ? INT_MIN : p->width - (int)content;
