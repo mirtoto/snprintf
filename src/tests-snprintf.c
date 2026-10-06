@@ -1225,6 +1225,114 @@ MU_TEST(test_size_ptrdiff_and_intmax_lengths) {
 	mu_check(strtoull(msg, NULL, 10) == (unsigned long long)SIZE_MAX);
 }
 
+MU_TEST(test_size_t_modifiers) {
+	size_t v = (size_t)18446744073709551615ULL;
+	int ret = snprintf(msg, sizeof(msg), "%zu", v);
+	mu_check(msg[0] != '-');
+	mu_check(strtoull(msg, NULL, 10) == v);
+
+	v = (size_t)42;
+	ret = snprintf(msg, sizeof(msg), "%zd %zo %zx %zX", (ssize_t)v, v, v, v);
+	TEST(11, "42 52 2a 2A", ret);
+}
+
+MU_TEST(test_ptrdiff_t_modifiers) {
+	ptrdiff_t v = -7;
+	int ret = snprintf(msg, sizeof(msg), "%td %tx %to", v, (ptrdiff_t)255, (ptrdiff_t)8);
+	TEST(8, "-7 ff 10", ret);
+}
+
+MU_TEST(test_intmax_t_modifiers) {
+	intmax_t v = 123456789012LL;
+	char big[64];
+	int ret = snprintf(big, sizeof(big), "%jd %jx %jo", v, v, v);
+	mu_assert_int_eq(37, ret);
+	mu_assert_string_eq("123456789012 1cbe991a14 1627646215024", big);
+}
+
+MU_TEST(test_n_with_ztj_modifiers) {
+	size_t z = 0;
+	ptrdiff_t t = 0;
+	intmax_t j = 0;
+	snprintf(msg, sizeof(msg), "abc%zn%tn%jn", &z, &t, &j);
+	mu_assert_int_eq(3, z);
+	mu_assert_int_eq(3, t);
+	mu_assert_int_eq(3, j);
+}
+
+#ifdef SNPRINTF_LEGACY_LENGTH
+MU_TEST(test_legacy_length_mode) {
+	// legacy mode returns written count, not total length
+	int ret = snprintf(msg, 4, "%s", "0123456789ABCDEF");
+	TEST(3, "012", ret);
+
+	// %n behind full buffer is not reached
+	int counter = -1;
+	ret = snprintf(msg, 4, "abcd%n", &counter);
+	TEST(3, "abc", ret);
+	mu_check(counter == -1);
+}
+#endif
+
+MU_TEST(test_subnormal_rounding) {
+	double min_subnormal;
+	uint64_t subnormal_bits = 1ULL;
+	memcpy(&min_subnormal, &subnormal_bits, sizeof(min_subnormal));
+	
+	// 4.94065645841246544177e-324
+	int ret = snprintf(msg, sizeof(msg), "%.6e", min_subnormal);
+	TEST(13, "4.940656e-324", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.6g", min_subnormal);
+	TEST(12, "4.94066e-324", ret);
+
+	// next subnormal
+	subnormal_bits = 2ULL;
+	memcpy(&min_subnormal, &subnormal_bits, sizeof(min_subnormal));
+	ret = snprintf(msg, sizeof(msg), "%.6e", min_subnormal);
+	TEST(13, "9.881313e-324", ret);
+}
+
+#ifdef SNPRINTF_FLOAT_PRECISION
+#if SNPRINTF_FLOAT_PRECISION >= 999
+MU_TEST(test_float_precision_999) {
+	double d = 1.25;
+	snprintf(msg, sizeof(msg), "%.999f", d);
+	mu_assert_int_eq(1001, ret); // "1." + 999 digits
+	mu_check(strncmp(msg, "1.25", 4) == 0);
+	for (int i = 4; i < 1001; i++) {
+		mu_check(msg[i] == '0');
+	}
+	mu_check(msg[1001] == '\0');
+}
+#endif
+#endif
+
+#ifdef SNPRINTF_FLOAT_INTEGRAL_DIGITS
+#if SNPRINTF_FLOAT_INTEGRAL_DIGITS <= 40
+MU_TEST(test_float_integral_40) {
+	// 1e45 exceeds 40 integral digits, should print row of 9s
+	double d = 1e45;
+	snprintf(msg, sizeof(msg), "%.0f", d);
+	mu_check(strncmp(msg, "999", 3) == 0);
+}
+#endif
+#endif
+
+#ifdef SNPRINTF_USE_MATH
+MU_TEST(test_math_backend) {
+	// verify modf/signbit path produces same output
+	int ret = snprintf(msg, sizeof(msg), "%f %e %g", 1.5, 1.5, 1.5);
+	TEST(25, "1.500000 1.500000e+00 1.5", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%f", -0.0);
+	TEST(9, "-0.000000", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%f %e %g", INFINITY, -INFINITY, NAN);
+	TEST(12, "inf -inf nan", ret);
+}
+#endif
+
 MU_TEST(test_double_large_integer_values_are_exact) {
 	int ret = snprintf(msg, sizeof(msg), "%.0f", 171798714241.0);
 	TEST(12, "171798714241", ret);
@@ -1963,6 +2071,27 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_zero_flag_on_string_pads_with_blanks);
 #endif
 	MU_RUN_TEST(test_size_ptrdiff_and_intmax_lengths);
+	MU_RUN_TEST(test_size_t_modifiers);
+	MU_RUN_TEST(test_ptrdiff_t_modifiers);
+	MU_RUN_TEST(test_intmax_t_modifiers);
+	MU_RUN_TEST(test_n_with_ztj_modifiers);
+#ifdef SNPRINTF_LEGACY_LENGTH
+	MU_RUN_TEST(test_legacy_length_mode);
+#endif
+	MU_RUN_TEST(test_subnormal_rounding);
+#ifdef SNPRINTF_FLOAT_PRECISION
+#if SNPRINTF_FLOAT_PRECISION >= 999
+	MU_RUN_TEST(test_float_precision_999);
+#endif
+#endif
+#ifdef SNPRINTF_FLOAT_INTEGRAL_DIGITS
+#if SNPRINTF_FLOAT_INTEGRAL_DIGITS <= 40
+	MU_RUN_TEST(test_float_integral_40);
+#endif
+#endif
+#ifdef SNPRINTF_USE_MATH
+	MU_RUN_TEST(test_math_backend);
+#endif
 	MU_RUN_TEST(test_double_large_integer_values_are_exact);
 	MU_RUN_TEST(test_double_fraction_digits_are_exact);
 	MU_RUN_TEST(test_double_sign_flags_of_zero_and_both_flags);
