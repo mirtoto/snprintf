@@ -1601,9 +1601,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
   if (length < 1) {
     string = NULL;
   }
-  if (string == NULL) {
-    length = __SIZE_MAX__;
-  }
+if (string == NULL) {
+     length = SIZE_MAX;
+   }
 
   data.ps_size = length - 1; /* leave room for '\0' */
   data.ps = string;
