@@ -227,11 +227,7 @@ struct DATA {
 
   unsigned int a_long:3;    /**< type of input */
 
-  unsigned int rfu:6;       /**< RFU */
-
   char pad;                 /**< padding character */
-
-  char slop[5];             /**< RFU */
 };
 
 /**
@@ -627,8 +623,15 @@ static double integral(double real, double *ip) {
 
 /** Base of the limbs used by integer_limbs(): 9 decimal digits each. */
 #define INTEGER_LIMB_BASE 1000000000UL
+/** Number of decimal digits per limb in integer_limbs(). */
+#define LIMB_DIGITS 9
 /** Number of limbs used by integer_limbs(): enough for the integral part. */
-#define INTEGER_LIMBS ((SNPRINTF_FLOAT_INTEGRAL_DIGITS + 8) / 9)
+#define INTEGER_LIMBS ((SNPRINTF_FLOAT_INTEGRAL_DIGITS + LIMB_DIGITS - 1) / LIMB_DIGITS)
+
+/** Value of the most significant limb when the fraction is exactly one half. */
+#define HALF_LIMB 0x80000000UL
+/** Exponent magnitude at which the exponent field uses 3 digits instead of 2. */
+#define EXPONENT_3_DIGIT_THRESHOLD 100
 
 /**
  * Convert the non-negative, integral @p value to base 10^9 limbs without any
@@ -702,7 +705,7 @@ static size_t integer_digits(double value, char *output, size_t size) {
   for (i = 0; i < used; i++) {
     uint32_t v = limbs[i];
     int digits;
-    for (digits = 0; digits < 9; digits++) {
+    for (digits = 0; digits < LIMB_DIGITS; digits++) {
       if (i == used - 1 && v == 0) { /* no leading zeros */
         break;
       }
@@ -739,7 +742,7 @@ static int integer_top(double value, size_t count, char *output,
   size_t used = integer_limbs(value, limbs);
   size_t taken = 0, i, d, lead = 1;
   uint32_t v;
-  char text[9];
+  char text[LIMB_DIGITS];
 
   if (used == 0) {
     return 0;
@@ -748,16 +751,16 @@ static int integer_top(double value, size_t count, char *output,
   for (v = limbs[used - 1]; v >= 10; v /= 10) { /* digits of the first limb */
     lead++;
   }
-  *total = 9 * (used - 1) + lead;
+  *total = LIMB_DIGITS * (used - 1) + lead;
   *sticky = 0;
 
   for (i = used; i-- > 0 && taken <= count;) {
     v = limbs[i];
-    for (d = 9; d-- > 0;) {
+    for (d = LIMB_DIGITS; d-- > 0;) {
       text[d] = (char)('0' + v % 10);
       v /= 10;
     }
-    for (d = i == used - 1 ? 9 - lead : 0; d < 9 && taken <= count; d++) {
+    for (d = i == used - 1 ? LIMB_DIGITS - lead : 0; d < LIMB_DIGITS && taken <= count; d++) {
       output[taken++] = text[d];
     }
     if (taken > count) { /* the rest of this limb and the limbs below it */
@@ -809,7 +812,8 @@ static void fraction_init(struct FRACTION *f, double value) {
     return;
   }
 
-  /* value = mantissa * 2^-scale, with 2^52 <= mantissa < 2^53 */
+  /* Normalize value to [1.0, 2.0) so mantissa fits in 53 bits.
+   * value = mantissa * 2^-scale, with 2^52 <= mantissa < 2^53 */
   while (value < 1.) {
     value *= 2.; /* exact, only the exponent changes */
     scale++;
@@ -858,8 +862,8 @@ static int fraction_next(struct FRACTION *f) {
 static int fraction_rest(const struct FRACTION *f) {
   size_t j;
 
-  if (f->limbs[FRACTION_LIMBS - 1] != 0x80000000UL) {
-    return f->limbs[FRACTION_LIMBS - 1] > 0x80000000UL ? 2 : 0;
+  if (f->limbs[FRACTION_LIMBS - 1] != HALF_LIMB) {
+    return f->limbs[FRACTION_LIMBS - 1] > HALF_LIMB ? 2 : 0;
   }
   for (j = f->first; j < FRACTION_LIMBS - 1; j++) {
     if (f->limbs[j] != 0) {
@@ -1429,7 +1433,7 @@ static void exponent(struct DATA *p, double d) {
   }
   has_dot = p->is_square || (p->precision != 0 &&
       (!is_general || fraction[0] != '\0'));
-  exponent_digits = log <= -100 || log >= 100 ? 3 : 2;
+  exponent_digits = log <= -EXPONENT_3_DIGIT_THRESHOLD || log >= EXPONENT_3_DIGIT_THRESHOLD ? 3 : 2;
   p->width -= (int)strlen(integral) + (int)strlen(fraction) + has_dot +
       exponent_digits + 2;
   if (!minus && (p->is_plus || p->is_space)) {
@@ -1507,7 +1511,7 @@ static void conv_flags(struct DATA *p) {
   p->pad = ' ';
   p->is_dot = 0;
 
-  for (; p != NULL && p->pf != NULL; p->pf++) {
+  for (; p->pf != NULL; p->pf++) {
     switch (*p->pf) {
       case ' ':
         p->is_space = 1;
