@@ -1,5 +1,6 @@
 CC		:= gcc
 CFLAGS	:= -DUSE_SNPRINTF_PREFIX -Wall -Wextra -g
+COVFLAGS	:=
 
 BIN		:= bin
 SRC		:= src
@@ -34,20 +35,26 @@ OBJECTS		:= $(SOURCES:.c=.o)
 
 all: $(BIN)/$(EXECUTABLE)
 
-.PHONY: clean
+.PHONY: clean coverage
 clean:
 	-$(RM) $(BIN)/$(EXECUTABLE)
 	-$(RM) $(OBJECTS)
+	-$(RM) *.gcda *.gcno *.gcov src/*.gcda src/*.gcno
 
+coverage:
+	$(MAKE) clean
+	$(MAKE) CFLAGS="-DUSE_SNPRINTF_PREFIX -Wall -Wextra -g --coverage" COVFLAGS="--coverage"
+	./$(BIN)/$(EXECUTABLE)
+	gcov -b -m src/snprintf.c
 
 run: all
 	./$(BIN)/$(EXECUTABLE)
 
 .c.o:
-	$(CC) $(CFLAGS) $(CINCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(COVFLAGS) $(CINCLUDES) -c $< -o $@
 
 $(BIN)/$(EXECUTABLE): $(OBJECTS) | $(BIN)/
-	$(CC) $(CLIBS) -o $@ $^ $(LIBRARIES)
+	$(CC) $(CLIBS) $(COVFLAGS) -o $@ $^ $(LIBRARIES)
 
 $(BIN)/:
 	$(MKDIR) $@
