@@ -1,5 +1,11 @@
 CC		:= gcc
 CFLAGS	:= -DUSE_SNPRINTF_PREFIX -Wall -Wextra -g
+
+# Tests intentionally use format strings that exceed INT_MAX to verify
+# overflow handling. GCC's -Wformat-overflow cannot be suppressed via
+# #pragma because it is evaluated during optimization, so disable it
+# for the test file only.
+src/tests-snprintf.o: CFLAGS += -Wno-format-overflow
 COVFLAGS	:=
 
 BIN		:= bin

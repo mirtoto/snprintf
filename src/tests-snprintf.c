@@ -300,7 +300,8 @@ MU_TEST(test_long_long_unsigned_sign_flags) {
 #endif
 
 #if __GNUC__ >= 7
-#pragma GCC diagnostic pop
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat="
 #endif
 
 MU_TEST(test_char_dec) {
@@ -340,6 +341,10 @@ MU_TEST(test_short_dec_negative) {
 		(short)-1230, (short)-1230, (short)-1230);
 	TEST(16, "-1230-1230 64306", ret);
 }
+
+#if __GNUC__ >= 7
+#pragma GCC diagnostic pop
+#endif
 
 MU_TEST(test_int_dec) {
 	int ret = snprintf(msg, sizeof(msg), "%d %d% d %u", 0, 123, 123, 123);
@@ -467,6 +472,7 @@ MU_TEST(test_long_hex_width_as_type) {
 	TEST(sizeof(x) * 2, expected + strlen(expected) - sizeof(x) * 2, ret);
 }
 
+#ifndef SNPRINTF_NO_LONGLONG
 MU_TEST(test_long_long_dec) {
 	int ret = snprintf(msg, sizeof(msg), "%lld", 123000000000ll);
 	TEST(12, "123000000000", ret);
@@ -525,7 +531,6 @@ MU_TEST(test_long_long_hex_max) {
 	expected[sizeof(x) * 2] = '\0';
 	TEST(sizeof(x) * 2, expected, ret);
 }
-
 MU_TEST(test_double_f) {
 	int ret = snprintf(msg, sizeof(msg), "%f %f %F",
 		0.0, 123.0, 123.0 + 1.0 / 3);
@@ -627,7 +632,6 @@ MU_TEST(test_double_g_alternate_form_and_significant_precision) {
 	ret = snprintf(msg, sizeof(msg), "%*.*g", 8, -1, 1.25);
 	TEST(8, "    1.25", ret);
 }
-
 MU_TEST(test_double_negative_and_sign_flags) {
 	int ret = snprintf(msg, sizeof(msg), "%f %.2e", -1.25, -12.5);
 	TEST(19, "-1.250000 -1.25e+01", ret);
@@ -872,6 +876,7 @@ MU_TEST(test_double_alternate_form_zero_precision_width) {
 	ret = snprintf(msg, sizeof(msg), "%#12.0e", 3.0);
 	TEST(12, "      3.e+00", ret);
 }
+#endif
 
 MU_TEST(test_string_null_pointer) {
 	const char *str = NULL;
@@ -1987,6 +1992,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_long_hex_alternative);
 	MU_RUN_TEST(test_long_hex_width_as_type);
 
+	#ifndef SNPRINTF_NO_LONGLONG
 	MU_RUN_TEST(test_long_long_dec);
 	MU_RUN_TEST(test_long_long_dec_min);
 	MU_RUN_TEST(test_long_long_dec_max);
@@ -1998,6 +2004,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_long_long_hex_alternative);
 	MU_RUN_TEST(test_long_long_hex_width_as_type);
 	MU_RUN_TEST(test_long_long_hex_max);
+	MU_RUN_TEST(test_unsigned_long_long_max);
 
 	MU_RUN_TEST(test_double_f);
 	MU_RUN_TEST(test_double_f_precision_0);
@@ -2023,6 +2030,15 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_width_and_zero_padding);
 	MU_RUN_TEST(test_double_dynamic_width_and_precision);
 	MU_RUN_TEST(test_double_alternate_form_zero_precision_width);
+	MU_RUN_TEST(test_subnormal_rounding);
+	MU_RUN_TEST(test_double_large_integer_values_are_exact);
+	MU_RUN_TEST(test_double_fraction_digits_are_exact);
+	MU_RUN_TEST(test_double_sign_flags_of_zero_and_both_flags);
+	MU_RUN_TEST(test_double_e_and_g_digits_are_exact);
+	MU_RUN_TEST(test_double_negative_zero);
+	MU_RUN_TEST(test_double_big_integral_part_is_exact);
+	MU_RUN_TEST(test_prefix_is_not_skipped_when_buffer_is_null_or_full);
+#endif
 
 	MU_RUN_TEST(test_string_null_pointer);
 	MU_RUN_TEST(test_string);
@@ -2058,8 +2074,6 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_counters);
 	MU_RUN_TEST(test_counter_star_arguments);
 	MU_RUN_TEST(test_counter_length_modifiers);
-
-	MU_RUN_TEST(test_unsigned_long_long_max);
 	MU_RUN_TEST(test_unsigned_long_max);
 	MU_RUN_TEST(test_unsigned_ignores_plus_and_space_flags);
 	MU_RUN_TEST(test_pointer_dynamic_width);
@@ -2078,7 +2092,6 @@ MU_TEST_SUITE(test_suite) {
 #ifdef SNPRINTF_LEGACY_LENGTH
 	MU_RUN_TEST(test_legacy_length_mode);
 #endif
-	MU_RUN_TEST(test_subnormal_rounding);
 #ifdef SNPRINTF_FLOAT_PRECISION
 #if SNPRINTF_FLOAT_PRECISION >= 999
 	MU_RUN_TEST(test_float_precision_999);
@@ -2092,13 +2105,6 @@ MU_TEST_SUITE(test_suite) {
 #ifdef SNPRINTF_USE_MATH
 	MU_RUN_TEST(test_math_backend);
 #endif
-	MU_RUN_TEST(test_double_large_integer_values_are_exact);
-	MU_RUN_TEST(test_double_fraction_digits_are_exact);
-	MU_RUN_TEST(test_double_sign_flags_of_zero_and_both_flags);
-	MU_RUN_TEST(test_double_e_and_g_digits_are_exact);
-	MU_RUN_TEST(test_double_negative_zero);
-	MU_RUN_TEST(test_double_big_integral_part_is_exact);
-	MU_RUN_TEST(test_prefix_is_not_skipped_when_buffer_is_null_or_full);
 	MU_RUN_TEST(test_truncated_output_returns_the_whole_length);
 	MU_RUN_TEST(test_truncated_output_does_not_write_past_the_buffer);
 	MU_RUN_TEST(test_counter_is_the_whole_length_when_truncated);
