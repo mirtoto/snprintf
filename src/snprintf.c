@@ -219,7 +219,11 @@ struct DATA {
 /** Value of DATA::a_long - "long" type of input argument. */
 #define INT_LEN_LONG          1
 /** Value of DATA::a_long - "long long" of input type argument. */
+#ifdef SNPRINTF_NO_LONGLONG
+#define INT_LEN_LONG_LONG     INT_LEN_LONG
+#else
 #define INT_LEN_LONG_LONG     2
+#endif
 /** Value of DATA::a_long - "short" type of input argument. */
 #define INT_LEN_SHORT         3
 /** Value of DATA::a_long - "char" type of input argument. */
@@ -375,9 +379,9 @@ static void terminate_buffer(struct DATA *p) {
 #define INTEGER_ARG(p, type, ll)                        \
   WIDTH_AND_PRECISION_ARGS(p);                          \
   if ((p)->a_long == INT_LEN_LONG_LONG) {               \
-    ll = (long long)va_arg(args, type long long);       \
+    ll = (longlong_t)va_arg(args, type LONGLONG_T);     \
   } else if ((p)->a_long == INT_LEN_LONG) {             \
-    ll = (long long)va_arg(args, type long);            \
+    ll = (longlong_t)va_arg(args, type long);           \
   } else {                                              \
     type int a = va_arg(args, type int);                \
     if ((p)->a_long == INT_LEN_SHORT) {                 \
@@ -483,16 +487,16 @@ static size_t strtoi(const char *a, int *res) {
  *
  * @return Number of digits written.
  */
-static size_t inttoa(unsigned long long n, int base, char *output,
+static size_t inttoa(unsignedlonglong_t n, int base, char *output,
     size_t output_size) {
   size_t i = 0, j, count;
 
   output_size--; /* for '\0' character */
 
   while (n != 0 && i < output_size) {
-    int r = (int)(n % (unsigned long long)base);
+    int r = (int)(n % (unsignedlonglong_t)base);
     output[i++] = (char)r + (r < 10 ? '0' : 'a' - 10);
-    n /= (unsigned long long)base;
+    n /= (unsignedlonglong_t)base;
   }
 
   if (i == 0) { /* a zero value is one '0' digit */
@@ -514,11 +518,11 @@ static size_t inttoa(unsigned long long n, int base, char *output,
 /**
  * Magnitude of a @c long @c long, also correct for LLONG_MIN.
  */
-static unsigned long long magnitude_of(long long number) {
+static unsignedlonglong_t magnitude_of(longlong_t number) {
   if (number < 0) {
-    return (unsigned long long)(-(number + 1)) + 1ULL;
+    return (unsignedlonglong_t)(-(number + 1)) + 1ULL;
   }
-  return (unsigned long long)number;
+  return (unsignedlonglong_t)number;
 }
 
 /**
@@ -595,7 +599,7 @@ static double integral(double real, double *ip) {
   }
 
   /* the real work :-) */
-  *ip = (double)(unsigned long long)real; /* truncation is exact */
+  *ip = (double)(unsignedlonglong_t)real; /* truncation is exact */
   return (real - *ip);
 #endif
 }
@@ -647,7 +651,7 @@ static double integral(double real, double *ip) {
  * @return Number of limbs (at least 1), or 0 if @p value does not fit.
  */
 static size_t integer_limbs(double value, uint32_t *limbs) {
-  unsigned long long n;
+  unsignedlonglong_t n;
   size_t used = 0, i;
   int shift = 0;
 
@@ -655,7 +659,7 @@ static size_t integer_limbs(double value, uint32_t *limbs) {
     value /= 2.; /* exact, only the exponent changes */
     shift++;
   }
-  n = (unsigned long long)value;
+  n = (unsignedlonglong_t)value;
 
   do {
     if (used == INTEGER_LIMBS) {
@@ -667,9 +671,9 @@ static size_t integer_limbs(double value, uint32_t *limbs) {
 
   while (shift > 0) { /* multiply by 2^bits, at most 2^30 to stay below 2^64 */
     int bits = shift < 30 ? shift : 30;
-    unsigned long long carry = 0;
+    unsignedlonglong_t carry = 0;
     for (i = 0; i < used; i++) {
-      unsigned long long v = ((unsigned long long)limbs[i] << bits) + carry;
+      unsignedlonglong_t v = ((unsignedlonglong_t)limbs[i] << bits) + carry;
       limbs[i] = (uint32_t)(v % INTEGER_LIMB_BASE);
       carry = v / INTEGER_LIMB_BASE;
     }
@@ -798,7 +802,7 @@ struct FRACTION {
 
 /** Set @p f to @p value, where 0 <= @p value < 1. */
 static void fraction_init(struct FRACTION *f, double value) {
-  unsigned long long mantissa;
+  unsignedlonglong_t mantissa;
   uint32_t low, high;
   size_t i, words;
   int scale = 52;
@@ -818,7 +822,7 @@ static void fraction_init(struct FRACTION *f, double value) {
     value *= 2.; /* exact, only the exponent changes */
     scale++;
   }
-  mantissa = (unsigned long long)(value * 4503599627370496.); /* 2^52 */
+  mantissa = (unsignedlonglong_t)(value * 4503599627370496.); /* 2^52 */
 
   /* limbs = mantissa * 2^(FRACTION_LIMBS * 32 - scale) */
   words = (size_t)(FRACTION_LIMBS * 32 - scale) / 32;
@@ -837,11 +841,11 @@ static void fraction_init(struct FRACTION *f, double value) {
 
 /** Take the next decimal digit of @p f off the fraction. */
 static int fraction_next(struct FRACTION *f) {
-  unsigned long long carry = 0;
+  unsignedlonglong_t carry = 0;
   size_t j;
 
   for (j = f->first; j < FRACTION_LIMBS; j++) { /* multiply by ten */
-    unsigned long long v = (unsigned long long)f->limbs[j] * 10U + carry;
+    unsignedlonglong_t v = (unsignedlonglong_t)f->limbs[j] * 10U + carry;
     f->limbs[j] = (uint32_t)v;
     carry = v >> 32;
   }
@@ -1093,17 +1097,17 @@ static void emit_format_prefix(struct DATA *p, const char *prefix) {
  * Subtract the length of the field content from DATA::width, saturating
  * to INT_MIN for extreme precision values to avoid overflow.
  */
-static void width_minus(struct DATA *p, long long content) {
+static void width_minus(struct DATA *p, longlong_t content) {
   p->width = content > INT_MAX ? INT_MIN : p->width - (int)content;
 }
 
 /** Format @p ll number as ASCII decimal string according to @p p flags. */
-static void decimal(struct DATA *p, long long ll) {
+static void decimal(struct DATA *p, longlong_t ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
   const int is_signed = *p->pf == 'i' || *p->pf == 'd';
   const int is_negative = is_signed && ll < 0;
-  const unsigned long long magnitude =
-      is_signed ? magnitude_of(ll) : (unsigned long long)ll;
+  const unsignedlonglong_t magnitude =
+      is_signed ? magnitude_of(ll) : (unsignedlonglong_t)ll;
   size_t padding;
   size_t digits = inttoa(magnitude, 10, number, sizeof(number));
   int sign = 0;
@@ -1124,7 +1128,7 @@ static void decimal(struct DATA *p, long long ll) {
     sign = 1; /* '+' and ' ' apply to signed conversions only */
   }
 
-  width_minus(p, (long long)digits + sign);
+  width_minus(p, (longlong_t)digits + sign);
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     if (sign) {
       emit_sign_prefix(p, is_negative);
@@ -1148,9 +1152,9 @@ static void decimal(struct DATA *p, long long ll) {
 }
 
 /** Format @p ll number as ASCII octal string according to @p p flags. */
-static void octal(struct DATA *p, long long ll) {
+static void octal(struct DATA *p, longlong_t ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
-  const unsigned long long magnitude = (unsigned long long)ll;
+  const unsignedlonglong_t magnitude = (unsignedlonglong_t)ll;
   const char *prefix = NULL;
   size_t padding;
   size_t digits = inttoa(magnitude, 8, number, sizeof(number));
@@ -1177,7 +1181,7 @@ static void octal(struct DATA *p, long long ll) {
     }
   }
 
-  width_minus(p, (long long)digits + (prefix != NULL ? 1 : 0));
+  width_minus(p, (longlong_t)digits + (prefix != NULL ? 1 : 0));
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
     PUT_REPEAT('0', p, p->width);
@@ -1197,9 +1201,9 @@ static void octal(struct DATA *p, long long ll) {
 }
 
 /** Format @p ll number as ASCII hexadecimal string according to @p p flags. */
-static void hex(struct DATA *p, long long ll) {
+static void hex(struct DATA *p, longlong_t ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
-  const unsigned long long magnitude = (unsigned long long)ll;
+  const unsignedlonglong_t magnitude = (unsignedlonglong_t)ll;
   const char *prefix = NULL;
   size_t padding;
   size_t digits = inttoa(magnitude, 16, number, sizeof(number));
@@ -1218,8 +1222,8 @@ static void hex(struct DATA *p, long long ll) {
     prefix = *p->pf == 'p' ? "0x" : (*p->pf == 'X' ? "0X" : "0x");
   }
 
-  width_minus(p, (long long)digits +
-      (prefix != NULL ? (long long)strlen(prefix) : 0));
+  width_minus(p, (longlong_t)digits +
+      (prefix != NULL ? (longlong_t)strlen(prefix) : 0));
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
     PUT_REPEAT('0', p, p->width);
@@ -1704,7 +1708,7 @@ if (string == NULL) {
           }
 
           case 'u': { /* unsigned decimal integer */
-            long long ll;
+            longlong_t ll;
             INTEGER_ARG(&data, unsigned, ll);
             decimal(&data, ll);
             is_continue = 0;
@@ -1713,7 +1717,7 @@ if (string == NULL) {
 
           case 'i':
           case 'd': { /* signed decimal integer */
-            long long ll;
+            longlong_t ll;
             INTEGER_ARG(&data, signed, ll);
             decimal(&data, ll);
             is_continue = 0;
@@ -1721,7 +1725,7 @@ if (string == NULL) {
           }
 
           case 'o': { /* octal (always unsigned) */
-            long long ll;
+            longlong_t ll;
             INTEGER_ARG(&data, unsigned, ll);
             octal(&data, ll);
             is_continue = 0;
@@ -1730,7 +1734,7 @@ if (string == NULL) {
 
           case 'x':
           case 'X': { /* hexadecimal (always unsigned) */
-            long long ll;
+            longlong_t ll;
             INTEGER_ARG(&data, unsigned, ll);
             hex(&data, ll);
             is_continue = 0;
@@ -1784,7 +1788,7 @@ if (string == NULL) {
               }
               strings(&data, "(nil)");
             } else {
-              hex(&data, (long long)(uintptr_t)v); /* no sign extension */
+              hex(&data, (longlong_t)(uintptr_t)v); /* no sign extension */
             }
             is_continue = 0;
             break;
@@ -1795,22 +1799,16 @@ if (string == NULL) {
                arguments, a star is consumed even though it
                changes nothing. */
             WIDTH_AND_PRECISION_ARGS(&data);
-            switch (data.a_long) {
-              case INT_LEN_CHAR:
-                *va_arg(args, signed char *) = (signed char)output_count(&data);
-                break;
-              case INT_LEN_SHORT:
-                *va_arg(args, short *) = (short)output_count(&data);
-                break;
-              case INT_LEN_LONG:
-                *va_arg(args, long *) = (long)output_count(&data);
-                break;
-              case INT_LEN_LONG_LONG:
-                *va_arg(args, long long *) = (long long)output_count(&data);
-                break;
-              default:
-                *va_arg(args, int *) = (int)output_count(&data);
-                break;
+            if (data.a_long == INT_LEN_CHAR) {
+              *va_arg(args, signed char *) = (signed char)output_count(&data);
+            } else if (data.a_long == INT_LEN_SHORT) {
+              *va_arg(args, short *) = (short)output_count(&data);
+            } else if (data.a_long == INT_LEN_LONG) {
+              *va_arg(args, long *) = (long)output_count(&data);
+            } else if (data.a_long == INT_LEN_LONG_LONG) {
+              *va_arg(args, longlong_t *) = (longlong_t)output_count(&data);
+            } else {
+              *va_arg(args, int *) = (int)output_count(&data);
             }
             is_continue = 0;
             break;
