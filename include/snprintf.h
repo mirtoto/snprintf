@@ -12,25 +12,6 @@ extern "C" {
 #endif
 
 /**
- * Optional no-long-long mode.
- *
- * When SNPRINTF_NO_LONGLONG is defined, the internal accumulator type falls
- * back to long / unsigned long, so the core implementation compiles on
- * pre-C99 toolchains that lack long long.  Floating-point conversions need a
- * 53-bit mantissa and will not be exact on targets where unsigned long is
- * narrower than 64 bits.
- */
-#ifdef SNPRINTF_NO_LONGLONG
-typedef long longlong_t;
-typedef unsigned long unsignedlonglong_t;
-#define LONGLONG_T long
-#else
-typedef long long longlong_t;
-typedef unsigned long long unsignedlonglong_t;
-#define LONGLONG_T long long
-#endif
-
-/**
  * Optional strict validation mode.
  *
  * When defined at compile time, malformed or unsupported format specifiers

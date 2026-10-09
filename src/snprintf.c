@@ -172,6 +172,23 @@
 #include "snprintf.h"
 
 
+/**
+ * Internal types for long long handling.
+ * Defined here to avoid polluting the public header and colliding with
+ * system headers like <sys/types.h> on illumos/Solaris which defines
+ * longlong_t.
+ */
+#ifdef SNPRINTF_NO_LONGLONG
+typedef long longlong_t;
+typedef unsigned long unsignedlonglong_t;
+#define LONGLONG_T long
+#else
+typedef long long longlong_t;
+typedef unsigned long long unsignedlonglong_t;
+#define LONGLONG_T long long
+#endif
+
+
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wextra-semi-stmt"
