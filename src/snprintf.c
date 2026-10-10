@@ -537,7 +537,7 @@ static size_t inttoa(unsignedlonglong_t n, int base, char *output,
  */
 static unsignedlonglong_t magnitude_of(longlong_t number) {
   if (number < 0) {
-    return (unsignedlonglong_t)(-(number + 1)) + 1ULL;
+    return (unsignedlonglong_t)(-(number + 1)) + 1UL;
   }
   return (unsignedlonglong_t)number;
 }
