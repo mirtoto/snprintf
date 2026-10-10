@@ -512,7 +512,7 @@ static size_t inttoa(unsignedlonglong_t n, int base, char *output,
 
   while (n != 0 && i < output_size) {
     int r = (int)(n % (unsignedlonglong_t)base);
-    output[i++] = (char)r + (r < 10 ? '0' : 'a' - 10);
+    output[i++] = (char)(r + (r < 10 ? '0' : 'a' - 10));
     n /= (unsignedlonglong_t)base;
   }
 
