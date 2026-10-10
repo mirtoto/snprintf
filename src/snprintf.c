@@ -344,7 +344,7 @@ static size_t output_count(const struct DATA *p) {
  */
 static void terminate_buffer(struct DATA *p) {
   if (p->ps != NULL) {
-    p->ps[0] = '\0'; /* terminate at buffer start on format rejection */
+    p->ps[0] = '\0'; /* terminate the partial output at the current position */
   }
 }
 
