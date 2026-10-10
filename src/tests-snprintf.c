@@ -7,9 +7,9 @@
 #include <string.h>
 #include <time.h>
 
-#include "minunit.h"
-
 #include "snprintf.h"
+
+#include "minunit.h"
 
 #include "tests-snprintf.h"
 
