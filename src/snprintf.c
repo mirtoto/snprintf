@@ -160,7 +160,6 @@
  *    project can raise to the 999 the C standard asks for.
  */
 
-#include <ctype.h>
 #include <float.h>
 #include <limits.h>
 #include <stdint.h>
@@ -170,6 +169,17 @@
 #endif
 
 #include "snprintf.h"
+
+/** Portable replacements for <ctype.h> functions. */
+static inline int snprintf_isdigit(int c) {
+  /* (c - '0') wraps for non-digits; the unsigned cast makes negative
+     values large, so only '0'-'9' (0-9) pass the < 10 check. */
+  return (unsigned char)(c - '0') < 10;
+}
+
+static inline int snprintf_hex_toupper(int c) {
+  return (c >= 'a' && c <= 'f') ? c - 'a' + 'A' : c;
+}
 
 
 /**
@@ -476,7 +486,7 @@ static size_t strtoi(const char *a, int *res) {
   size_t i = 0;
   unsigned int value = 0;
 
-  for (; a[i] != '\0' && isdigit((unsigned char)a[i]); i++) {
+  for (; a[i] != '\0' && snprintf_isdigit(a[i]); i++) {
     unsigned int digit = (unsigned int)(a[i] - '0');
     if (value > ((unsigned int)INT_MAX - digit) / 10U) {
       value = INT_MAX;
@@ -1253,7 +1263,11 @@ static void hex(struct DATA *p, longlong_t ll) {
   PUT_REPEAT('0', p, padding);
 
   for (; *pnumber != '\0'; pnumber++) {
-    PUT_CHAR((*p->pf == 'X' ? (char)toupper(*pnumber) : *pnumber), p);
+    char c = *pnumber;
+    if (*p->pf == 'X') {
+      c = (char)snprintf_hex_toupper(c);
+    }
+    PUT_CHAR(c, p);
   }
 
   PAD_LEFT(p);
