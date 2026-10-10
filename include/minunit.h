@@ -23,6 +23,12 @@
 #ifndef MINUNIT_MINUNIT_H
 #define MINUNIT_MINUNIT_H
 
+/* Change POSIX C SOURCE version for pure c99 compilers - must be before any system headers */
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200112L
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#endif
+
 #ifdef __cplusplus
 	extern "C" {
 #endif
@@ -35,12 +41,6 @@
 #endif
 
 #elif defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
-
-/* Change POSIX C SOURCE version for pure c99 compilers */
-#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200112L
-#undef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200112L
-#endif
 
 #include <unistd.h>	/* POSIX flags */
 #include <time.h>	/* clock_gettime(), time() */
