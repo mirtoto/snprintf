@@ -147,16 +147,23 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    double. A smaller value saves stack, and a number with a longer integral
  *    part is then printed as a row of nines, with the exponent of %e and %g
  *    taken from the biggest number that fits.
- *  - Not supported are the length modifier L (long double), the conversions
- *    a and A, the extensions of other C libraries like %' for grouping and %m
- *    for the strerror string, and numbered arguments like %1$d. Only the % is
- *    printed: everything from it to the unsupported character goes with it, and
- *    the rest of the format is text, so %5k prints %, %La prints %a and %1$d
- *    prints %d. No argument is used, so a conversion after it reads the
- *    argument the unsupported one would have had. In the strict mode the
- *    function fails.
- * 
- *  With SNPRINTF_LEGACY_LENGTH the result of a truncated output is the number
+*  - Not supported are the length modifier L (long double), the conversions
+    a and A, the extensions of other C libraries like %' for grouping and %m
+    for the strerror string, and numbered arguments like %1$d. Only the % is
+    printed: everything from it to the unsupported character goes with it, and
+    the rest of the format is text, so %5k prints %, %La prints %a and %1$d
+    prints %d. No argument is used, so a conversion after it reads the
+    argument the unsupported one would have had. In the strict mode the
+    function fails.
+  * 
+  *  - A specifier is the flags, the width, a . with the precision, the length
+  *    and the conversion, in this order and each of them once. The strict mode
+  *    fails for one which breaks it, like %1 2d, %5*d, %5.3.2d or %l5d, and for
+  *    a length modifier the standard does not have for the conversion, like
+  *    %lhd, %zzd, %hf or %lp. The default mode takes them as they come, but
+  *    still reads the argument as the type of the length modifier it has seen.
+  * 
+  *  With SNPRINTF_LEGACY_LENGTH the result of a truncated output is the number
  *  of characters written instead of the length of the whole output, and %n
  *  stores that number and is not reached at all when the output was already
  *  truncated, as before version 3.2. The strict mode is the exception, as it

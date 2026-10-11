@@ -1857,6 +1857,70 @@ MU_TEST(test_strict_mode_terminates_the_buffer_on_failure) {
 }
 #endif
 
+MU_TEST(test_strict_mode_rejects_a_specifier_out_of_order) {
+	// A specifier is the flags, the width, a '.' with the precision, the length
+	// and the conversion, in this order and each of them once.
+	static const char *const formats[] = {
+		"%5-d", "%5+d", "%5#x", "%5 d", "%5 5d", "%1 2d", "%.3-d", "%.3 d",
+		"%5*d", "%*5d", "%**d", "%.5*d", "%.*5d", "%5.3.2d", "%..d",
+		"%l 5d", "%h5d", "%5l5d", "%ll-5d", "%z+d", "%l.3d", "%j#x",
+	};
+
+	for (size_t f = 0; f < sizeof formats / sizeof *formats; f++) {
+		int ret = snprintf(msg, sizeof(msg), formats[f], 7, 7, 7);
+		mu_assert(ret == -1, formats[f]);
+	}
+}
+
+MU_TEST(test_strict_mode_rejects_malformed_length_modifiers) {
+	// Only hh, h, l, ll, z, t and j exist, and none of them goes with another.
+	// A floating-point number takes l or nothing, and a pointer nothing at all.
+	static const char *const formats[] = {
+		"%lhd", "%hld", "%zzd", "%hhhd", "%llld", "%zld", "%jjd", "%tld",
+		"%ztd", "%hjd", "%hf", "%hhg", "%llf", "%zf", "%tF", "%jE", "%lle",
+		"%hp", "%lp", "%zp",
+	};
+
+	for (size_t f = 0; f < sizeof formats / sizeof *formats; f++) {
+		int ret = snprintf(msg, sizeof(msg), formats[f], 7, 1.5);
+		mu_assert(ret == -1, formats[f]);
+	}
+}
+
+MU_TEST(test_every_valid_order_of_a_specifier) {
+	// What the strict mode must keep accepting, as the other modes do.
+	int ret = snprintf(msg, sizeof(msg), "%-+ #08.3d", 7);
+	TEST(8, "+007    ", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%*.*d", 6, 3, 7);
+	TEST(6, "   007", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%.05d|%.00d|%5.03d", 42, 7, 7);
+	TEST(13, "00042|7|  007", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%lld|%hhu|%zu|%jd|%tx",
+		5LL, 300u, (size_t)6, (intmax_t)7, (ptrdiff_t)255);
+	TEST(11, "5|44|6|7|ff", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%lf|%5.1lf|%le", 1.5, 2.25, 0.5);
+	TEST(27, "1.500000|  2.2|5.000000e-01", ret);
+}
+
+#ifndef SNPRINTF_STRICT
+MU_TEST(test_flags_after_the_length_keep_the_length) {
+	// Not a valid specifier, but the argument is still read as the type the
+	// caller passed: the length modifier is not forgotten.
+	int ret = snprintf(msg, sizeof(msg), "%ll5d", LLONG_MAX);
+	TEST(19, "9223372036854775807", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%ll 5d", LLONG_MIN);
+	TEST(20, "-9223372036854775808", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%hh5d", 300);
+	TEST(5, "   44", ret);
+}
+#endif
+
 MU_TEST(test_counters) {
 	int counter1 = 0, counter2 = 0;
 	int ret = snprintf(msg, sizeof(msg), "%s%n %s%n%c",
@@ -2115,6 +2179,12 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_biggest_unsigned_long_long_in_every_base);
 #ifdef SNPRINTF_STRICT
 	MU_RUN_TEST(test_strict_mode_terminates_the_buffer_on_failure);
+	MU_RUN_TEST(test_strict_mode_rejects_a_specifier_out_of_order);
+	MU_RUN_TEST(test_strict_mode_rejects_malformed_length_modifiers);
+#endif
+	MU_RUN_TEST(test_every_valid_order_of_a_specifier);
+#ifndef SNPRINTF_STRICT
+	MU_RUN_TEST(test_flags_after_the_length_keep_the_length);
 #endif
 }
 

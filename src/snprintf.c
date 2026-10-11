@@ -63,8 +63,14 @@
  *    and clang across the default, strict, legacy and math builds
  *    with -Werror, ASan/UBSan unit tests and fuzz runs, plus the
  *    blocking 32-bit job, for -m32 and for -m32 -msse2 -mfpmath=sse.
- *  - Expanded tests: char width and alignment, pointer width,
- *    unsigned maxima, and sign-flag edge cases.
+*  - Expanded tests: char width and alignment, pointer width,
+  *    unsigned maxima, and sign-flag edge cases.
+ *  - Strict parsing: SNPRINTF_STRICT now fails for a specifier whose parts are
+ *    out of order or repeated (%1 2d, %5*d, %5.3.2d, %l5d), for stacked or
+ *    mixed length modifiers (%lhd, %zzd) and for one a floating-point
+ *    conversion or %p does not have (%hf, %lp). The default mode no longer
+ *    forgets the length modifier when flags follow it, so %ll5d reads a
+ *    long long and not an int.
  * 
  * @version 3.1
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
@@ -257,6 +263,11 @@ struct DATA {
 #define INT_LEN_CHAR          4
 
   unsigned int a_long:3;    /**< type of input */
+
+#ifdef SNPRINTF_STRICT
+  unsigned int len_count:2; /**< number of length modifiers of the conversion */
+  char len_char;            /**< the last length modifier of the conversion */
+#endif
 
   char pad;                 /**< padding character */
 };
@@ -1532,16 +1543,38 @@ static void exponent(struct DATA *p, double d) {
  * Initialize and parse the flags, the width and the precision of
  * a conversion specifier.
  *
+ * The C standard gives them in this order, each of them once: the flags, the
+ * width, a '.' with the precision. The strict mode refuses a specifier which
+ * breaks it, like %1 2d, %5*d or %5.3.2d.
+ *
  * @p p->pf points at the first character after the '%' on entry
  * and at the character before the conversion specifier on exit,
  * which the caller reprocesses.
+ *
+ * @retval 0 The specifier is fine so far.
+ * @retval -1 The strict mode refuses it. The permissive mode never does.
  */
-static void conv_flags(struct DATA *p) {
+#ifdef SNPRINTF_STRICT
+#define STRICT_REQUIRE(condition)                       \
+  if (!(condition)) {                                   \
+    return -1;                                          \
+  }
+#else
+#define STRICT_REQUIRE(condition)
+#endif
+
+static int conv_flags(struct DATA *p) {
+  int stage = 0; /* 0: flags, 1: width given, 2: after '.', 3: precision given */
+
   p->width = WIDTH_UNSET;
   p->precision = PRECISION_UNSET;
   p->is_star_w = p->is_star_p = 0;
   p->is_square = p->is_plus = p->is_space = 0;
   p->a_long = INT_LEN_DEFAULT;
+#ifdef SNPRINTF_STRICT
+  p->len_count = 0;
+  p->len_char = '\0';
+#endif
   p->align = ALIGN_UNSET;
   p->pad = ' ';
   p->is_dot = 0;
@@ -1549,32 +1582,42 @@ static void conv_flags(struct DATA *p) {
   for (; p->pf != NULL; p->pf++) {
     switch (*p->pf) {
       case ' ':
+        STRICT_REQUIRE(stage == 0)
         p->is_space = 1;
         break;
 
       case '#':
+        STRICT_REQUIRE(stage == 0)
         p->is_square = 1;
         break;
 
       case '*':
         if (p->width == WIDTH_UNSET) {
+          STRICT_REQUIRE(stage == 0)
+          stage = 1;
           p->width = 1;
           p->is_star_w = 1;
         } else {
+          STRICT_REQUIRE(stage == 2)
+          stage = 3;
           p->precision = 1;
           p->is_star_p = 1;
         }
         break;
 
       case '+':
+        STRICT_REQUIRE(stage == 0)
         p->is_plus = 1;
         break;
 
       case '-':
+        STRICT_REQUIRE(stage == 0)
         p->align = ALIGN_LEFT;
         break;
 
       case '.':
+        STRICT_REQUIRE(stage <= 1)
+        stage = 2;
         if (p->width == WIDTH_UNSET) {
           p->width = 0;
         }
@@ -1583,9 +1626,12 @@ static void conv_flags(struct DATA *p) {
         break;
 
       case '0':
-        if (p->is_dot) {
-          p->precision = 0;
+        if (p->is_dot) { /* a precision which starts with zeros, like %.05d */
+          STRICT_REQUIRE(stage == 2)
+          stage = 3;
+          p->pf += strtoi(p->pf, &p->precision) - 1;
         } else {
+          STRICT_REQUIRE(stage == 0)
           p->pad = '0';
         }
         break;
@@ -1599,6 +1645,8 @@ static void conv_flags(struct DATA *p) {
       case '7':
       case '8':
       case '9': /* get all the digits */
+        STRICT_REQUIRE(stage == (p->is_dot ? 2 : 0))
+        stage = p->is_dot ? 3 : 1;
         p->pf += strtoi(p->pf,
           p->width == WIDTH_UNSET ? &p->width : &p->precision) - 1;
         break;
@@ -1606,9 +1654,12 @@ static void conv_flags(struct DATA *p) {
       case '%':
       default:
         p->pf--; /* Reprocess this character as the conversion specifier. */
-        return;
+        return 0;
     }
   }
+
+  (void)stage;
+  return 0;
 }
 
 /**
@@ -1628,6 +1679,34 @@ static int output_length(size_t count) {
 static int fail(struct DATA *p) {
   terminate_buffer(p);
   return -1;
+}
+#endif
+
+#ifdef SNPRINTF_STRICT
+/**
+ * Take the length modifier @p c of a conversion. The standard has hh, h, l, ll,
+ * z, t and j, so only h and l may be doubled, and no two different ones go
+ * together, like %lhd, %zzd or %hhhd.
+ *
+ * @return 1 when it is fine, 0 when it is malformed.
+ */
+static int length_modifier(struct DATA *p, char c) {
+  const unsigned int most = (c == 'h' || c == 'l') ? 2U : 1U;
+
+  if (p->len_count != 0 && (p->len_char != c || p->len_count >= most)) {
+    return 0;
+  }
+  p->len_char = c;
+  p->len_count++;
+  return 1;
+}
+
+/**
+ * Tell if the length modifiers of a conversion suit a floating-point number: the
+ * standard has none, or l, which changes nothing, and L, which is not supported.
+ */
+static int float_length_is_valid(const struct DATA *p) {
+  return p->len_count == 0 || (p->len_char == 'l' && p->len_count == 1);
 }
 #endif
 
@@ -1665,7 +1744,13 @@ if (string == NULL) {
     if (*data.pf == '%') { /* Start parsing a conversion specifier. */
       int is_continue = 1;
       data.pf++; /* the '%' itself, the flags follow it */
-      conv_flags(&data); /* initialise format flags */
+#ifdef SNPRINTF_STRICT
+      if (conv_flags(&data) != 0) { /* initialise format flags */
+        return fail(&data);
+      }
+#else
+      (void)conv_flags(&data); /* initialise format flags */
+#endif
       while (*data.pf != '\0' && is_continue) {
         switch (*(++data.pf)) {
           case '\0': /* The format string ended before a conversion specifier. */
@@ -1679,6 +1764,11 @@ if (string == NULL) {
           case 'f':
           case 'F': { /* decimal floating point */
             double d;
+#ifdef SNPRINTF_STRICT
+            if (!float_length_is_valid(&data)) {
+              return fail(&data);
+            }
+#endif
             DOUBLE_ARG(&data, d);
             if (special_float(&data, d)) { /* no precision needed for it */
               is_continue = 0; /* the switch continues, the while loop does not */
@@ -1695,6 +1785,11 @@ if (string == NULL) {
           case 'e':
           case 'E': { /* scientific (exponential) floating point */
             double d;
+#ifdef SNPRINTF_STRICT
+            if (!float_length_is_valid(&data)) {
+              return fail(&data);
+            }
+#endif
             DOUBLE_ARG(&data, d);
             if (special_float(&data, d)) { /* no precision needed for it */
               is_continue = 0; /* the switch continues, the while loop does not */
@@ -1712,6 +1807,11 @@ if (string == NULL) {
           case 'G': { /* scientific or decimal floating point */
             int log;
             double d;
+#ifdef SNPRINTF_STRICT
+            if (!float_length_is_valid(&data)) {
+              return fail(&data);
+            }
+#endif
             DOUBLE_ARG(&data, d);
             if (special_float(&data, d)) { /* no precision needed for it */
               is_continue = 0; /* the switch continues, the while loop does not */
@@ -1808,6 +1908,11 @@ if (string == NULL) {
             break;
 
           case 'p': { /* pointer */
+#ifdef SNPRINTF_STRICT
+            if (data.len_count != 0) { /* the standard has none for a pointer */
+              return fail(&data);
+            }
+#endif
             WIDTH_AND_PRECISION_ARGS(&data);
             void *v = va_arg(args, void *);
             data.is_square = 1;
@@ -1845,6 +1950,11 @@ if (string == NULL) {
             break;
 
           case 'l': /* long or long long */
+#ifdef SNPRINTF_STRICT
+            if (!length_modifier(&data, 'l')) {
+              return fail(&data);
+            }
+#endif
             if (data.a_long == INT_LEN_LONG) {
               data.a_long = INT_LEN_LONG_LONG;
             } else {
@@ -1853,6 +1963,11 @@ if (string == NULL) {
             break;
 
           case 'h': /* short or char */
+#ifdef SNPRINTF_STRICT
+            if (!length_modifier(&data, 'h')) {
+              return fail(&data);
+            }
+#endif
             if (data.a_long == INT_LEN_SHORT) {
               data.a_long = INT_LEN_CHAR;
             } else {
@@ -1861,16 +1976,31 @@ if (string == NULL) {
             break;
 
           case 'z': /* size_t / ssize_t */
+#ifdef SNPRINTF_STRICT
+            if (!length_modifier(&data, 'z')) {
+              return fail(&data);
+            }
+#endif
             data.a_long = sizeof(size_t) <= sizeof(int) ? INT_LEN_DEFAULT :
               sizeof(size_t) <= sizeof(long) ? INT_LEN_LONG : INT_LEN_LONG_LONG;
             break;
 
           case 't': /* ptrdiff_t */
+#ifdef SNPRINTF_STRICT
+            if (!length_modifier(&data, 't')) {
+              return fail(&data);
+            }
+#endif
             data.a_long = sizeof(ptrdiff_t) <= sizeof(int) ? INT_LEN_DEFAULT :
               sizeof(ptrdiff_t) <= sizeof(long) ? INT_LEN_LONG : INT_LEN_LONG_LONG;
             break;
 
           case 'j': /* intmax_t / uintmax_t */
+#ifdef SNPRINTF_STRICT
+            if (!length_modifier(&data, 'j')) {
+              return fail(&data);
+            }
+#endif
             data.a_long = INT_LEN_LONG_LONG;
             break;
 
@@ -1899,7 +2029,19 @@ if (string == NULL) {
           case '7':
           case '8':
           case '9':
-            conv_flags(&data);
+            /* Flags, width and precision come before the length modifier. The
+               strict mode refuses them here. The permissive one takes them, but
+               keeps the length, which conv_flags() would reset, so that the
+               argument is still read as the type the caller passed. */
+#ifdef SNPRINTF_STRICT
+            return fail(&data);
+#else
+            {
+              const unsigned int a_long = data.a_long;
+              (void)conv_flags(&data);
+              data.a_long = a_long;
+            }
+#endif
             break;
 
           default:
