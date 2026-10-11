@@ -1301,14 +1301,15 @@ MU_TEST(test_subnormal_rounding) {
 #ifdef SNPRINTF_FLOAT_PRECISION
 #if SNPRINTF_FLOAT_PRECISION >= 999
 MU_TEST(test_float_precision_999) {
+	static char big[1100]; // the output is 1001 characters, msg holds only 32
 	double d = 1.25;
-	snprintf(msg, sizeof(msg), "%.999f", d);
+	int ret = snprintf(big, sizeof(big), "%.999f", d);
 	mu_assert_int_eq(1001, ret); // "1." + 999 digits
-	mu_check(strncmp(msg, "1.25", 4) == 0);
+	mu_check(strncmp(big, "1.25", 4) == 0);
 	for (int i = 4; i < 1001; i++) {
-		mu_check(msg[i] == '0');
+		mu_check(big[i] == '0');
 	}
-	mu_check(msg[1001] == '\0');
+	mu_check(big[1001] == '\0');
 }
 #endif
 #endif
