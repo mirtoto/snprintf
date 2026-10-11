@@ -346,8 +346,8 @@ static size_t output_count(const struct DATA *p) {
     PUT_CHAR(' ', p);                                   \
   }
 
-/** Padding right optionally. */
-#define PAD_RIGHT(p)                                    \
+/** Pad before content (left side) for right-aligned fields. */
+#define PAD_BEFORE(p)                                   \
   do {                                                  \
     if ((p)->width > 0 && (p)->align != ALIGN_LEFT) {   \
       PUT_REPEAT((p)->pad, p, (p)->width);              \
@@ -355,8 +355,8 @@ static size_t output_count(const struct DATA *p) {
     }                                                   \
   } while (0)
 
-/** Padding left optionally. */
-#define PAD_LEFT(p)                                     \
+/** Pad after content (right side) for left-aligned fields. */
+#define PAD_AFTER(p)                                    \
   do {                                                  \
     if ((p)->width > 0 && (p)->align == ALIGN_LEFT) {   \
       PUT_REPEAT(' ', p, (p)->width);              \
@@ -1210,7 +1210,7 @@ static void decimal(struct DATA *p, longlong_t ll) {
     PUT_REPEAT('0', p, p->width);
     p->width = 0;
   } else {
-    PAD_RIGHT(p);
+    PAD_BEFORE(p);
     if (sign) {
       emit_sign_prefix(p, is_negative);
     }
@@ -1222,7 +1222,7 @@ static void decimal(struct DATA *p, longlong_t ll) {
     PUT_CHAR(*pnumber, p);
   }
 
-  PAD_LEFT(p);
+  PAD_AFTER(p);
 }
 
 /** Format @p ll number as ASCII octal string according to @p p flags. */
@@ -1261,7 +1261,7 @@ static void octal(struct DATA *p, longlong_t ll) {
     PUT_REPEAT('0', p, p->width);
     p->width = 0;
   } else {
-    PAD_RIGHT(p);
+    PAD_BEFORE(p);
     emit_format_prefix(p, prefix);
   }
 
@@ -1271,7 +1271,7 @@ static void octal(struct DATA *p, longlong_t ll) {
     PUT_CHAR(*pnumber, p);
   }
 
-  PAD_LEFT(p);
+  PAD_AFTER(p);
 }
 
 /** Format @p ll number as ASCII hexadecimal string according to @p p flags. */
@@ -1303,7 +1303,7 @@ static void hex(struct DATA *p, longlong_t ll) {
     PUT_REPEAT('0', p, p->width);
     p->width = 0;
   } else {
-    PAD_RIGHT(p);
+    PAD_BEFORE(p);
     emit_format_prefix(p, prefix);
   }
 
@@ -1317,7 +1317,7 @@ static void hex(struct DATA *p, longlong_t ll) {
     PUT_CHAR(c, p);
   }
 
-  PAD_LEFT(p);
+  PAD_AFTER(p);
 }
 
 /**
@@ -1367,7 +1367,7 @@ static void strings(struct DATA *p, const char *s) {
   }
   p->width = (int)padding;
 
-  PAD_RIGHT(p);
+  PAD_BEFORE(p);
 
   available = p->ps_size - p->written;
   copy_length = len < available ? len : available;
@@ -1378,7 +1378,7 @@ static void strings(struct DATA *p, const char *s) {
   p->written += copy_length;
   p->counter += len; /* the whole string counts, not only the part written */
 
-  PAD_LEFT(p);
+  PAD_AFTER(p);
 }
 
 static int special_float(struct DATA *p, double value) {
@@ -1399,7 +1399,7 @@ static int special_float(struct DATA *p, double value) {
   p->width -= (int)strlen(text) +
       (is_negative || p->is_plus || p->is_space ? 1 : 0);
   p->pad = ' ';
-  PAD_RIGHT(p);
+  PAD_BEFORE(p);
 
   if (is_negative) {
     PUT_CHAR('-', p);
@@ -1413,7 +1413,7 @@ static int special_float(struct DATA *p, double value) {
     PUT_CHAR(*text++, p);
   }
 
-  PAD_LEFT(p);
+  PAD_AFTER(p);
   p->pad = pad;
   return 1;
 }
@@ -1456,7 +1456,7 @@ static void float_emit(struct DATA *p, const char *integral,
     PUT_REPEAT('0', p, p->width);
     p->width = 0;
   } else {
-    PAD_RIGHT(p);
+    PAD_BEFORE(p);
     PUT_PLUS(!minus, p);
     PUT_SPACE(!minus, p);
   }
@@ -1497,7 +1497,7 @@ static void float_emit(struct DATA *p, const char *integral,
     }
   }
 
-  PAD_LEFT(p);
+  PAD_AFTER(p);
 }
 
 /** Number of digits of the decimal exponent @p log: at least two, three from 100. */
@@ -1961,9 +1961,9 @@ if (string == NULL) {
             i = va_arg(args, int);
             data.width--;
             data.pad = ' ';
-            PAD_RIGHT(&data);
+            PAD_BEFORE(&data);
             PUT_CHAR((char)i, &data);
-            PAD_LEFT(&data);
+            PAD_AFTER(&data);
             data.pad = pad;
             is_continue = 0;
             break;
