@@ -1855,7 +1855,6 @@ MU_TEST(test_strict_mode_terminates_the_buffer_on_failure) {
 		}
 	}
 }
-#endif
 
 MU_TEST(test_strict_mode_rejects_a_specifier_out_of_order) {
 	// A specifier is the flags, the width, a '.' with the precision, the length
@@ -1886,6 +1885,7 @@ MU_TEST(test_strict_mode_rejects_malformed_length_modifiers) {
 		mu_assert(ret == -1, formats[f]);
 	}
 }
+#endif
 
 MU_TEST(test_every_valid_order_of_a_specifier) {
 	// What the strict mode must keep accepting, as the other modes do.
