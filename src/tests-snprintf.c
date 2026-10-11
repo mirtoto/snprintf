@@ -1,4 +1,5 @@
 // Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
+#include <stdio.h>
 #include <limits.h>
 #include <stdint.h>
 #include <float.h>
