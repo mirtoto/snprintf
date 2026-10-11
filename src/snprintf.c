@@ -71,6 +71,13 @@
  *    conversion or %p does not have (%hf, %lp). The default mode no longer
  *    forgets the length modifier when flags follow it, so %ll5d reads a
  *    long long and not an int.
+ *  - Faster %e and %g of small numbers: the leading zeros of a fraction are
+ *    taken nine at a time, so 1e-300 costs about a ninth of the multiplications
+ *    it did, and %g converts the number once instead of twice, laying the same
+ *    significant digits out as the decimal or the scientific form. A number
+ *    with a longer integral part than SNPRINTF_FLOAT_INTEGRAL_DIGITS is now
+ *    the biggest number that fits, that many nines and then zeros, also for
+ *    a precision above it.
  * 
  * @version 3.1
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
@@ -877,13 +884,23 @@ static void fraction_init(struct FRACTION *f, double value) {
   f->first = words;
 }
 
-/** Take the next decimal digit of @p f off the fraction. */
-static int fraction_next(struct FRACTION *f) {
+/**
+ * Multiply the fraction @p f by @p multiplier and return what carries out of
+ * the most significant limb: the integer part of the product. A limb times a
+ * multiplier of at most 10^9, plus a carry below it, stays below 2^64.
+ *
+ * @param f Fraction to multiply, it keeps the rest of the product.
+ * @param multiplier At most 10^9.
+ *
+ * @return The next decimal digit for a multiplier of 10, the next nine digits
+ *         for 10^9.
+ */
+static uint32_t fraction_mul(struct FRACTION *f, uint32_t multiplier) {
   unsignedlonglong_t carry = 0;
   size_t j;
 
-  for (j = f->first; j < FRACTION_LIMBS; j++) { /* multiply by ten */
-    unsignedlonglong_t v = (unsignedlonglong_t)f->limbs[j] * 10U + carry;
+  for (j = f->first; j < FRACTION_LIMBS; j++) {
+    unsignedlonglong_t v = (unsignedlonglong_t)f->limbs[j] * multiplier + carry;
     f->limbs[j] = (uint32_t)v;
     carry = v >> 32;
   }
@@ -891,7 +908,38 @@ static int fraction_next(struct FRACTION *f) {
     f->first++;
   }
 
-  return (int)carry;
+  return (uint32_t)carry;
+}
+
+/** Take the next decimal digit of @p f off the fraction. */
+static int fraction_next(struct FRACTION *f) {
+  return (int)fraction_mul(f, 10U);
+}
+
+/** Number of leading zero digits after which significant_digits() gives up. */
+#define MAX_LEADING_ZEROS 330
+
+/**
+ * Take the leading zero digits off the fraction @p f, nine at a time.
+ *
+ * Below 2^-30 a fraction is also below 10^-9, so its next nine digits are all
+ * zeros and multiplying it by 10^9 carries nothing out. That is known from the
+ * most significant limb alone, so a small number, which starts with a long row
+ * of zeros, costs a ninth of the multiplications of taking them digit by digit.
+ *
+ * @return The number of zeros taken, a multiple of 9. Fewer than 9 zeros may
+ *         still follow, which the caller takes one by one.
+ */
+static int fraction_skip_zeros(struct FRACTION *f) {
+  int zeros = 0;
+
+  while (zeros + 9 <= MAX_LEADING_ZEROS &&
+      f->limbs[FRACTION_LIMBS - 1] < 4) { /* 4 * 2^-32 = 2^-30 */
+    (void)fraction_mul(f, 1000000000U);
+    zeros += 9;
+  }
+
+  return zeros;
 }
 
 /**
@@ -1048,8 +1096,10 @@ static void significant_digits(double value, size_t count, char *digits,
   if (ip >= 1.) { /* the digits come from the integral part first */
     int sticky = 0;
     if (!integer_top(ip, count, top, &n, &sticky)) {
-      for (i = 0; i < count; i++) { /* integral part exceeds buffer, fill with 9s */
-        digits[i] = '9';
+      /* The integral part exceeds the buffer: the biggest number that fits is
+         SNPRINTF_FLOAT_INTEGRAL_DIGITS nines, and zeros after them. */
+      for (i = 0; i < count; i++) {
+        digits[i] = i < (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS ? '9' : '0';
       }
       *exp10 = SNPRINTF_FLOAT_INTEGRAL_DIGITS - 1;
       return;
@@ -1071,7 +1121,8 @@ static void significant_digits(double value, size_t count, char *digits,
     struct FRACTION f;
     int digit = 0, zeros = 0;
     fraction_init(&f, fraction);
-    while (zeros <= 330 && (digit = fraction_next(&f)) == 0) {
+    zeros = fraction_skip_zeros(&f);
+    while (zeros <= MAX_LEADING_ZEROS && (digit = fraction_next(&f)) == 0) {
       zeros++;
     }
     *exp10 = -(zeros + 1);
@@ -1094,21 +1145,6 @@ static void significant_digits(double value, size_t count, char *digits,
       (*exp10)++;
     }
   }
-}
-
-/**
- * Get the decimal exponent of @p d in scientific notation, after @p d is
- * rounded to @p precision significant digits. It is 0 for zero.
- */
-static int rounded_exponent(double d, int precision) {
-  char digits[MAX_PRECISION + 2];
-  int exp10 = 0;
-
-  if (d != 0.) {
-    significant_digits(d < 0. ? -d : d, (size_t)precision, digits, &exp10);
-  }
-
-  return exp10;
 }
 
 /** Emit a sign prefix before zero-filled numeric output. */
@@ -1382,36 +1418,37 @@ static int special_float(struct DATA *p, double value) {
   return 1;
 }
 
-/** 
- * Format @p d floating point number as ASCII decimal floating point 
- * according to @p p flags.
+/**
+ * Print a floating-point number which is already converted to digits. It is the
+ * one place where the sign, the point, the zero padding, the width and the
+ * alignment of %f, %e and %g are done.
+ *
+ * @param p DATA of the conversion, with its flags and its width.
+ * @param integral Digits before the point, with the '-' in front of them for a
+ *                 negative number.
+ * @param fraction Digits after the point, without it. When it is empty there is
+ *                 no point either, unless the # flag asks for it.
+ * @param minus Tell if the number is negative, which is also true for negative
+ *              zero.
+ * @param exp_digits Number of digits of the exponent, 2 or 3, or 0 for a number
+ *                   without an exponent.
+ * @param log Decimal exponent to print when @p exp_digits is not 0.
  */
-static void floating(struct DATA *p, double d) {
-  char integral[MAX_FLOAT_INTEGRAL_SIZE], *pintegral = integral;
-  char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
-  int is_general = *p->pf == 'g' || *p->pf == 'G';
-  int minus = has_minus(d);
-  int has_dot;
+static void float_emit(struct DATA *p, const char *integral,
+    const char *fraction, int minus, int exp_digits, int log) {
+  const int has_dot = p->is_square || fraction[0] != '\0';
 
-  floattoa(d, p->precision,
-    integral, sizeof(integral), fraction, sizeof(fraction));
-
-  if (is_general && !p->is_square) {
-    size_t i;
-    for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
-      fraction[i - 1] = '\0';
-    }
-  }
-  has_dot = p->is_square || (p->precision != 0 &&
-      (!is_general || fraction[0] != '\0'));
   p->width -= (int)strlen(integral) + (int)strlen(fraction) + has_dot;
+  if (exp_digits != 0) {
+    p->width -= exp_digits + 2; /* the 'e' or 'E', its sign and the digits */
+  }
   if (!minus && (p->is_plus || p->is_space)) {
     p->width -= 1;
   }
-  
+
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
-    if (*pintegral == '-') {
-      PUT_CHAR(*pintegral++, p);
+    if (minus) {
+      PUT_CHAR(*integral++, p);
     } else {
       PUT_PLUS(!minus, p);
       PUT_SPACE(!minus, p);
@@ -1424,34 +1461,86 @@ static void floating(struct DATA *p, double d) {
     PUT_SPACE(!minus, p);
   }
 
-  for (; *pintegral != '\0'; pintegral++) {
-    PUT_CHAR(*pintegral, p);
+  for (; *integral != '\0'; integral++) {
+    PUT_CHAR(*integral, p);
   }
 
   if (has_dot) { /* put the '.' */
     PUT_CHAR('.', p);
   }
 
-  for (; *pfraction != '\0'; pfraction++) {
-    PUT_CHAR(*pfraction, p);
+  for (; *fraction != '\0'; fraction++) {
+    PUT_CHAR(*fraction, p);
+  }
+
+  if (exp_digits != 0) {
+    if (*p->pf == 'g' || *p->pf == 'e') { /* the exponent put the 'e|E' */
+      PUT_CHAR('e', p);
+    } else {
+      PUT_CHAR('E', p);
+    }
+
+    PUT_CHAR(log >= 0 ? '+' : '-', p); /* the sign of the exp */
+
+    { /* the exponent, with as many digits as exp_digits says */
+      unsigned int value = (unsigned int)(log < 0 ? -log : log);
+      unsigned int divisor = 1;
+      int digit;
+      for (digit = 1; digit < exp_digits; digit++) {
+        divisor *= 10;
+      }
+      for (digit = 0; digit < exp_digits; digit++) {
+        PUT_CHAR((char)('0' + value / divisor), p);
+        value %= divisor;
+        divisor /= 10;
+      }
+    }
   }
 
   PAD_LEFT(p);
 }
 
-/** 
+/** Number of digits of the decimal exponent @p log: at least two, three from 100. */
+static int exponent_digits(int log) {
+  return log <= -EXPONENT_3_DIGIT_THRESHOLD ||
+      log >= EXPONENT_3_DIGIT_THRESHOLD ? 3 : 2;
+}
+
+/**
+ * Remove the trailing zeros of the digits after the point, which %g does
+ * unless the # flag is given.
+ */
+static void strip_trailing_zeros(char *fraction) {
+  size_t i;
+
+  for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
+    fraction[i - 1] = '\0';
+  }
+}
+
+/**
+ * Format @p d floating point number as ASCII decimal floating point
+ * according to @p p flags.
+ */
+static void floating(struct DATA *p, double d) {
+  char integral[MAX_FLOAT_INTEGRAL_SIZE];
+  char fraction[MAX_FRACTION_SIZE];
+
+  floattoa(d, p->precision,
+    integral, sizeof(integral), fraction, sizeof(fraction));
+  float_emit(p, integral, fraction, has_minus(d), 0, 0);
+}
+
+/**
  * Format @p d floating point number as ASCII scientific (exponential)
  * floating point according to @p p flags.
  */
 static void exponent(struct DATA *p, double d) {
-  char integral[MAX_INTEGRAL_SIZE], *pintegral = integral;
-  char fraction[MAX_FRACTION_SIZE], *pfraction = fraction;
+  char integral[MAX_INTEGRAL_SIZE];
+  char fraction[MAX_FRACTION_SIZE];
   char digits[MAX_PRECISION + 2];
   int log = 0;
-  int is_general = *p->pf == 'g' || *p->pf == 'G';
   int minus = has_minus(d);
-  int has_dot;
-  int exponent_digits;
   size_t k;
 
   /* the first digit, then precision digits more */
@@ -1471,72 +1560,68 @@ static void exponent(struct DATA *p, double d) {
   memcpy(fraction, digits + 1, (size_t)p->precision);
   fraction[p->precision] = '\0';
 
-  if (is_general && !p->is_square) {
-    size_t i;
-    for (i = strlen(fraction); i > 0 && fraction[i - 1] == '0'; i--) {
-      fraction[i - 1] = '\0';
-    }
-  }
-  has_dot = p->is_square || (p->precision != 0 &&
-      (!is_general || fraction[0] != '\0'));
-  exponent_digits = log <= -EXPONENT_3_DIGIT_THRESHOLD || log >= EXPONENT_3_DIGIT_THRESHOLD ? 3 : 2;
-  p->width -= (int)strlen(integral) + (int)strlen(fraction) + has_dot +
-      exponent_digits + 2;
-  if (!minus && (p->is_plus || p->is_space)) {
-    p->width -= 1;
-  }
+  float_emit(p, integral, fraction, minus, exponent_digits(log), log);
+}
 
-  if (p->pad == '0' && p->align != ALIGN_LEFT) {
-    if (*pintegral == '-') {
-      PUT_CHAR(*pintegral++, p);
-    } else {
-      PUT_PLUS(!minus, p);
-      PUT_SPACE(!minus, p);
-    }
-    PUT_REPEAT('0', p, p->width);
-    p->width = 0;
+/**
+ * Format @p d floating point number as %g does, according to @p p flags: with
+ * @c precision significant digits, in the decimal form if the exponent is in
+ * the range [-4,precision] exclusively, else in the scientific form, and
+ * without the trailing zeros unless the # flag is given.
+ *
+ * Both forms print the same significant digits and only put the point in
+ * another place, so the number is converted once, and the digits are laid out
+ * by the exponent they come with.
+ *
+ * @param p DATA of the conversion, its precision is from 1 to MAX_PRECISION.
+ * @param d Finite number to format.
+ */
+static void general(struct DATA *p, double d) {
+  char integral[MAX_PRECISION + 4]; /* the '-', at most precision digits, '\0' */
+  char fraction[MAX_FRACTION_SIZE];
+  char digits[MAX_PRECISION + 1];
+  const size_t count = (size_t)p->precision;
+  const int minus = has_minus(d);
+  int log = 0;
+  int exp_digits = 0;
+  size_t k = 0;
+
+  if (d == 0.) {
+    memset(digits, '0', count);
   } else {
-    PAD_RIGHT(p);
-    PUT_PLUS(!minus, p);
-    PUT_SPACE(!minus, p);
+    significant_digits(minus ? -d : d, count, digits, &log);
   }
 
-  for (; *pintegral != '\0'; pintegral++) {
-    PUT_CHAR(*pintegral, p);
+  if (minus) {
+    integral[k++] = '-';
   }
-
-  if (has_dot) { /* the '.' */
-    PUT_CHAR('.', p);
-  }
-  for (; *pfraction != '\0'; pfraction++) {
-    PUT_CHAR(*pfraction, p);
-  }
-
-  if (*p->pf == 'g' || *p->pf == 'e') { /* the exponent put the 'e|E' */
-    PUT_CHAR('e', p);
-  } else {
-    PUT_CHAR('E', p);
-  }
-
-  PUT_CHAR(log >= 0 ? '+' : '-', p); /* the sign of the exp */
-
-  /* the exponent, at least two digits and as many as it needs, which is the
-     exponent_digits computed above */
-  {
-    unsigned int value = (unsigned int)(log < 0 ? -log : log);
-    unsigned int divisor = 1;
-    int digit;
-    for (digit = 1; digit < exponent_digits; digit++) {
-      divisor *= 10;
+  if (-4 <= log && log < p->precision) { /* the decimal form */
+    if (log >= 0) { /* the point is after the first log + 1 digits */
+      const size_t whole = (size_t)log + 1;
+      memcpy(integral + k, digits, whole);
+      k += whole;
+      memcpy(fraction, digits + whole, count - whole);
+      fraction[count - whole] = '\0';
+    } else { /* 0.000ddd: -log - 1 zeros come before the digits */
+      const size_t zeros = (size_t)(-log - 1);
+      integral[k++] = '0';
+      memset(fraction, '0', zeros);
+      memcpy(fraction + zeros, digits, count);
+      fraction[zeros + count] = '\0';
     }
-    for (digit = 0; digit < exponent_digits; digit++) {
-      PUT_CHAR((char)('0' + value / divisor), p);
-      value %= divisor;
-      divisor /= 10;
-    }
+  } else { /* the scientific form: d.ddd and the exponent */
+    integral[k++] = digits[0];
+    memcpy(fraction, digits + 1, count - 1);
+    fraction[count - 1] = '\0';
+    exp_digits = exponent_digits(log);
+  }
+  integral[k] = '\0';
+
+  if (!p->is_square) {
+    strip_trailing_zeros(fraction);
   }
 
-  PAD_LEFT(p);
+  float_emit(p, integral, fraction, minus, exp_digits, log);
 }
 
 /**
@@ -1805,7 +1890,6 @@ if (string == NULL) {
 
           case 'g':
           case 'G': { /* scientific or decimal floating point */
-            int log;
             double d;
 #ifdef SNPRINTF_STRICT
             if (!float_length_is_valid(&data)) {
@@ -1823,17 +1907,7 @@ if (string == NULL) {
             if (data.precision == 0) {
               data.precision = 1;
             }
-            log = rounded_exponent(d, data.precision);
-            /* use decimal floating point (%f / %F) if exponent is in the range
-               [-4,precision] exclusively else use scientific floating
-               point (%e / %E) */
-            if (-4 <= log && log < data.precision) {
-              data.precision -= log + 1;
-              floating(&data, d);
-            } else {
-              data.precision--;
-              exponent(&data, d);
-            }
+            general(&data, d); /* decimal or scientific, by the exponent */
             is_continue = 0;
             break;
           }
