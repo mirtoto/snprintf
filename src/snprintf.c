@@ -63,8 +63,8 @@
  *    and clang across the default, strict, legacy and math builds
  *    with -Werror, ASan/UBSan unit tests and fuzz runs, plus the
  *    blocking 32-bit job, for -m32 and for -m32 -msse2 -mfpmath=sse.
-*  - Expanded tests: char width and alignment, pointer width,
-  *    unsigned maxima, and sign-flag edge cases.
+ *  - Expanded tests: char width and alignment, pointer width,
+ *    unsigned maxima, and sign-flag edge cases.
  *  - Strict parsing: SNPRINTF_STRICT now fails for a specifier whose parts are
  *    out of order or repeated (%1 2d, %5*d, %5.3.2d, %l5d), for stacked or
  *    mixed length modifiers (%lhd, %zzd) and for one a floating-point
@@ -185,9 +185,9 @@
 
 /** Portable replacements for <ctype.h> functions. */
 static inline int snprintf_isdigit(int c) {
-  /* (c - '0') wraps for non-digits; the unsigned cast makes negative
-     values large, so only '0'-'9' (0-9) pass the < 10 check. */
-  return (unsigned char)(c - '0') < 10;
+  /* (c - '0') is negative for anything below '0', and the unsigned conversion
+     makes that a huge number, so only '0'-'9' pass the < 10 check. */
+  return (unsigned int)(c - '0') < 10U;
 }
 
 static inline int snprintf_hex_toupper(int c) {
@@ -200,6 +200,13 @@ static inline int snprintf_hex_toupper(int c) {
  * Defined here to avoid polluting the public header and colliding with
  * system headers like <sys/types.h> on illumos/Solaris which defines
  * longlong_t.
+ *
+ * Optional no-long-long mode: when SNPRINTF_NO_LONGLONG is defined, the
+ * accumulator falls back to long / unsigned long, for toolchains that lack
+ * long long. The integer conversions then reach as far as unsigned long does.
+ * The floating-point conversions need a 53-bit mantissa and are not exact on
+ * a target where unsigned long is narrower than 64 bits. The rest of the
+ * code still needs C99 (stdint.h, inline, // comments).
  */
 #ifdef SNPRINTF_NO_LONGLONG
 typedef long longlong_t;
@@ -2113,7 +2120,7 @@ if (string == NULL) {
             {
               const unsigned int a_long = data.a_long;
               (void)conv_flags(&data);
-              data.a_long = a_long;
+              data.a_long = a_long & 7U; /* a bitfield of 3 bits */
             }
 #endif
             break;
