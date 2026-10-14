@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2026 Miroslaw Toton, mirtoto@gmail.com
+/* Copyright (C) 2019-2026 Miroslaw Toton, mirtoto@gmail.com*/
 
 /**
  * Portable snprintf() implementation.
@@ -175,7 +175,6 @@
 
 #include <float.h>
 #include <limits.h>
-#include <stdint.h>
 #include <string.h>
 #ifdef SNPRINTF_USE_MATH
 #include <math.h>
@@ -183,14 +182,14 @@
 
 #include "snprintf.h"
 
-/** Portable replacements for <ctype.h> functions. */
-static inline int snprintf_isdigit(int c) {
+/* Portable replacements for <ctype.h> functions. */
+static int snprintf_isdigit(int c) {
   /* (c - '0') is negative for anything below '0', and the unsigned conversion
      makes that a huge number, so only '0'-'9' pass the < 10 check. */
   return (unsigned int)(c - '0') < 10U;
 }
 
-static inline int snprintf_hex_toupper(int c) {
+static int snprintf_hex_toupper(int c) {
   return (c >= 'a' && c <= 'f') ? c - 'a' + 'A' : c;
 }
 
@@ -205,8 +204,7 @@ static inline int snprintf_hex_toupper(int c) {
  * accumulator falls back to long / unsigned long, for toolchains that lack
  * long long. The integer conversions then reach as far as unsigned long does.
  * The floating-point conversions need a 53-bit mantissa and are not exact on
- * a target where unsigned long is narrower than 64 bits. The rest of the
- * code still needs C99 (stdint.h, inline, // comments).
+ * a target where unsigned long is narrower than 64 bits.
  */
 #ifdef SNPRINTF_NO_LONGLONG
 typedef long longlong_t;
@@ -217,6 +215,10 @@ typedef long long longlong_t;
 typedef unsigned long long unsignedlonglong_t;
 #define LONGLONG_T long long
 #endif
+
+/* Manual typedefs for types from <stdint.h> to stay pre-C99.
+   unsigned long is at least 32 bits per the C standard. */
+typedef unsigned long uint32_t;
 
 
 #ifdef __clang__
@@ -2005,7 +2007,9 @@ if (string == NULL) {
               }
               strings(&data, "(nil)");
             } else {
-              hex(&data, (longlong_t)(uintptr_t)v); /* no sign extension */
+              union { void *pv; unsignedlonglong_t ull; } u;
+              u.pv = v;
+              hex(&data, (longlong_t)u.ull); /* no sign extension */
             }
             is_continue = 0;
             break;

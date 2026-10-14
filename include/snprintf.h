@@ -1,4 +1,4 @@
-// Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com
+/* Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com*/
 #ifndef SNPRINTF_H_
 #define SNPRINTF_H_
 
@@ -230,7 +230,7 @@ int SNPRINTF_PREFIX(snprintf)(char *string, size_t length, const char *format, .
 #endif
 #define vsnprintf SNPRINTF_PREFIX(vsnprintf)
 
-#endif // #ifdef USE_SNPRINTF_PREFIX
+#endif /* #ifdef USE_SNPRINTF_PREFIX*/
 
 
 #ifdef __cplusplus
@@ -238,4 +238,4 @@ int SNPRINTF_PREFIX(snprintf)(char *string, size_t length, const char *format, .
 #endif
 
 
-#endif  // SNPRINTF_H_
+#endif  /* SNPRINTF_H_*/
