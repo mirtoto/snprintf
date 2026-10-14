@@ -220,6 +220,9 @@ typedef unsigned long long unsignedlonglong_t;
    unsigned long is at least 32 bits per the C standard. */
 typedef unsigned long uint32_t;
 
+/* SIZE_MAX was in <stdint.h>; use (size_t)-1 which is the maximum size_t. */
+#define SNPRINTF_SIZE_MAX ((size_t)-1)
+
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -1814,8 +1817,8 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
     string = NULL;
   }
 if (string == NULL) {
-     length = SIZE_MAX;
-   }
+      length = SNPRINTF_SIZE_MAX;
+    }
 
   data.ps_size = length - 1; /* leave room for '\0' */
   data.ps = string;
