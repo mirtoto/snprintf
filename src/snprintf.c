@@ -2007,9 +2007,9 @@ if (string == NULL) {
               }
               strings(&data, "(nil)");
             } else {
-              union { void *pv; unsignedlonglong_t ull; } u;
-              u.pv = v;
-              hex(&data, (longlong_t)u.ull); /* no sign extension */
+              unsignedlonglong_t ull;
+              memcpy(&ull, &v, sizeof(ull));
+              hex(&data, (longlong_t)ull); /* no sign extension */
             }
             is_continue = 0;
             break;
