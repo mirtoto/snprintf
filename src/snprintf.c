@@ -65,6 +65,10 @@
  *    blocking 32-bit job, for -m32 and for -m32 -msse2 -mfpmath=sse.
  *  - Expanded tests: char width and alignment, pointer width,
  *    unsigned maxima, and sign-flag edge cases.
+ *  - Fast math: an infinity, a not-a-number and the sign of a zero are told
+ *    from the bits of the double. Built with -ffast-math, or just
+ *    -ffinite-math-only, the compiler dropped the comparisons that found
+ *    them, and then the conversion of an infinity or a NaN never returned.
  *  - Strict parsing: SNPRINTF_STRICT now fails for a specifier whose parts are
  *    out of order or repeated (%1 2d, %5*d, %5.3.2d, %l5d), for stacked or
  *    mixed length modifiers (%lhd, %zzd) and for one a floating-point
@@ -198,7 +202,7 @@ static int snprintf_hex_toupper(int c) {
  * Internal types for long long handling.
  * Defined here to avoid polluting the public header and colliding with
  * system headers like <sys/types.h> on illumos/Solaris which defines
- * longlong_t.
+ * int64_t.
  *
  * Optional no-long-long mode: when SNPRINTF_NO_LONGLONG is defined, the
  * accumulator falls back to long / unsigned long, for toolchains that lack
@@ -207,13 +211,13 @@ static int snprintf_hex_toupper(int c) {
  * a target where unsigned long is narrower than 64 bits.
  */
 #ifdef SNPRINTF_NO_LONGLONG
-typedef long longlong_t;
-typedef unsigned long unsignedlonglong_t;
-#define LONGLONG_T long
+typedef long int64_t;
+typedef unsigned long uint64_t;
+#define INT64_T long
 #else
-typedef long long longlong_t;
-typedef unsigned long long unsignedlonglong_t;
-#define LONGLONG_T long long
+typedef long long int64_t;
+typedef unsigned long long uint64_t;
+#define INT64_T long long
 #endif
 
 /* Manual typedefs for types from <stdint.h> to stay pre-C99.
@@ -439,9 +443,9 @@ static void terminate_buffer(struct DATA *p) {
 #define INTEGER_ARG(p, type, ll)                        \
   WIDTH_AND_PRECISION_ARGS(p);                          \
   if ((p)->a_long == INT_LEN_LONG_LONG) {               \
-    ll = (longlong_t)va_arg(args, type LONGLONG_T);     \
+    ll = (int64_t)va_arg(args, type INT64_T);     \
   } else if ((p)->a_long == INT_LEN_LONG) {             \
-    ll = (longlong_t)va_arg(args, type long);           \
+    ll = (int64_t)va_arg(args, type long);           \
   } else {                                              \
     type int a = va_arg(args, type int);                \
     if ((p)->a_long == INT_LEN_SHORT) {                 \
@@ -547,16 +551,16 @@ static size_t strtoi(const char *a, int *res) {
  *
  * @return Number of digits written.
  */
-static size_t inttoa(unsignedlonglong_t n, int base, char *output,
+static size_t inttoa(uint64_t n, int base, char *output,
     size_t output_size) {
   size_t i = 0, j, count;
 
   output_size--; /* for '\0' character */
 
   while (n != 0 && i < output_size) {
-    int r = (int)(n % (unsignedlonglong_t)base);
+    int r = (int)(n % (uint64_t)base);
     output[i++] = (char)(r + (r < 10 ? '0' : 'a' - 10));
-    n /= (unsignedlonglong_t)base;
+    n /= (uint64_t)base;
   }
 
   if (i == 0) { /* a zero value is one '0' digit */
@@ -578,11 +582,11 @@ static size_t inttoa(unsignedlonglong_t n, int base, char *output,
 /**
  * Magnitude of a @c long @c long, also correct for LLONG_MIN.
  */
-static unsignedlonglong_t magnitude_of(longlong_t number) {
+static uint64_t magnitude_of(int64_t number) {
   if (number < 0) {
-    return (unsignedlonglong_t)(-(number + 1)) + 1UL;
+    return (uint64_t)(-(number + 1)) + 1UL;
   }
-  return (unsignedlonglong_t)number;
+  return (uint64_t)number;
 }
 
 /**
@@ -606,11 +610,36 @@ static int integer_field(const struct DATA *p, size_t digits,
   return p->precision > (int)digits ? p->precision : (int)digits;
 }
 
+/*
+ * An infinity, a not-a-number and the sign of a zero are told from the bits of
+ * the double, not by comparing it. With -ffast-math, or just -ffinite-math-only,
+ * the compiler assumes that a number is never infinite or not-a-number and
+ * drops a comparison made to find one, and then the conversion of an infinity
+ * never ends. With -fno-signed-zeros it forgets the sign of a zero. The bits
+ * are not touched by any of these options. It needs a double of the IEEE 754
+ * binary64 format, which every target with the 53-bit mantissa the
+ * floating-point conversions need has.
+ */
+#if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024 && \
+    (!defined(SNPRINTF_NO_LONGLONG) || ULONG_MAX > 0xffffffffUL)
+#define SNPRINTF_DOUBLE_BITS
+/** The bits of @p d: the sign, 11 bits of exponent, 52 bits of mantissa. */
+static uint64_t double_bits(double d) {
+  uint64_t bits;
+
+  memcpy(&bits, &d, sizeof(bits));
+  return bits;
+}
+#endif
+
 /**
  * Tell if @p d is printed with a minus sign. That is true for every negative
  * number and for negative zero too.
  */
 static int has_minus(double d) {
+#ifdef SNPRINTF_DOUBLE_BITS
+  return (double_bits(d) >> 63) != 0; /* also with SNPRINTF_USE_MATH */
+#else
   if (d != 0.) {
     return d < 0.;
   }
@@ -619,6 +648,7 @@ static int has_minus(double d) {
 #else
   return 1. / d < 0.; /* IEEE 754: 1/-0.0 -> -inf (<0) */
 #endif
+#endif /* SNPRINTF_DOUBLE_BITS */
 }
 
 /**
@@ -659,7 +689,7 @@ static double integral(double real, double *ip) {
   }
 
   /* the real work :-) */
-  *ip = (double)(unsignedlonglong_t)real; /* truncation is exact */
+  *ip = (double)(uint64_t)real; /* truncation is exact */
   return (real - *ip);
 #endif
 }
@@ -711,7 +741,7 @@ static double integral(double real, double *ip) {
  * @return Number of limbs (at least 1), or 0 if @p value does not fit.
  */
 static size_t integer_limbs(double value, uint32_t *limbs) {
-  unsignedlonglong_t n;
+  uint64_t n;
   size_t used = 0, i;
   int shift = 0;
 
@@ -719,7 +749,7 @@ static size_t integer_limbs(double value, uint32_t *limbs) {
     value /= 2.; /* exact, only the exponent changes */
     shift++;
   }
-  n = (unsignedlonglong_t)value;
+  n = (uint64_t)value;
 
   do {
     if (used == INTEGER_LIMBS) {
@@ -731,9 +761,9 @@ static size_t integer_limbs(double value, uint32_t *limbs) {
 
   while (shift > 0) { /* multiply by 2^bits, at most 2^30 to stay below 2^64 */
     int bits = shift < 30 ? shift : 30;
-    unsignedlonglong_t carry = 0;
+    uint64_t carry = 0;
     for (i = 0; i < used; i++) {
-      unsignedlonglong_t v = ((unsignedlonglong_t)limbs[i] << bits) + carry;
+      uint64_t v = ((uint64_t)limbs[i] << bits) + carry;
       limbs[i] = (uint32_t)(v % INTEGER_LIMB_BASE);
       carry = v / INTEGER_LIMB_BASE;
     }
@@ -862,7 +892,7 @@ struct FRACTION {
 
 /** Set @p f to @p value, where 0 <= @p value < 1. */
 static void fraction_init(struct FRACTION *f, double value) {
-  unsignedlonglong_t mantissa;
+  uint64_t mantissa;
   uint32_t low, high;
   size_t i, words;
   int scale = 52;
@@ -882,7 +912,7 @@ static void fraction_init(struct FRACTION *f, double value) {
     value *= 2.; /* exact, only the exponent changes */
     scale++;
   }
-  mantissa = (unsignedlonglong_t)(value * 4503599627370496.); /* 2^52 */
+  mantissa = (uint64_t)(value * 4503599627370496.); /* 2^52 */
 
   /* limbs = mantissa * 2^(FRACTION_LIMBS * 32 - scale) */
   words = (size_t)(FRACTION_LIMBS * 32 - scale) / 32;
@@ -911,11 +941,11 @@ static void fraction_init(struct FRACTION *f, double value) {
  *         for 10^9.
  */
 static uint32_t fraction_mul(struct FRACTION *f, uint32_t multiplier) {
-  unsignedlonglong_t carry = 0;
+  uint64_t carry = 0;
   size_t j;
 
   for (j = f->first; j < FRACTION_LIMBS; j++) {
-    unsignedlonglong_t v = (unsignedlonglong_t)f->limbs[j] * multiplier + carry;
+    uint64_t v = (uint64_t)f->limbs[j] * multiplier + carry;
     f->limbs[j] = (uint32_t)v;
     carry = v >> 32;
   }
@@ -1186,17 +1216,17 @@ static void emit_format_prefix(struct DATA *p, const char *prefix) {
  * Subtract the length of the field content from DATA::width, saturating
  * to INT_MIN for extreme precision values to avoid overflow.
  */
-static void width_minus(struct DATA *p, longlong_t content) {
+static void width_minus(struct DATA *p, int64_t content) {
   p->width = content > INT_MAX ? INT_MIN : p->width - (int)content;
 }
 
 /** Format @p ll number as ASCII decimal string according to @p p flags. */
-static void decimal(struct DATA *p, longlong_t ll) {
+static void decimal(struct DATA *p, int64_t ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
   const int is_signed = *p->pf == 'i' || *p->pf == 'd';
   const int is_negative = is_signed && ll < 0;
-  const unsignedlonglong_t magnitude =
-      is_signed ? magnitude_of(ll) : (unsignedlonglong_t)ll;
+  const uint64_t magnitude =
+      is_signed ? magnitude_of(ll) : (uint64_t)ll;
   size_t padding;
   size_t digits = inttoa(magnitude, 10, number, sizeof(number));
   int sign = 0;
@@ -1217,7 +1247,7 @@ static void decimal(struct DATA *p, longlong_t ll) {
     sign = 1; /* '+' and ' ' apply to signed conversions only */
   }
 
-  width_minus(p, (longlong_t)digits + sign);
+  width_minus(p, (int64_t)digits + sign);
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     if (sign) {
       emit_sign_prefix(p, is_negative);
@@ -1241,9 +1271,9 @@ static void decimal(struct DATA *p, longlong_t ll) {
 }
 
 /** Format @p ll number as ASCII octal string according to @p p flags. */
-static void octal(struct DATA *p, longlong_t ll) {
+static void octal(struct DATA *p, int64_t ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
-  const unsignedlonglong_t magnitude = (unsignedlonglong_t)ll;
+  const uint64_t magnitude = (uint64_t)ll;
   const char *prefix = NULL;
   size_t padding;
   size_t digits = inttoa(magnitude, 8, number, sizeof(number));
@@ -1270,7 +1300,7 @@ static void octal(struct DATA *p, longlong_t ll) {
     }
   }
 
-  width_minus(p, (longlong_t)digits + (prefix != NULL ? 1 : 0));
+  width_minus(p, (int64_t)digits + (prefix != NULL ? 1 : 0));
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
     PUT_REPEAT('0', p, p->width);
@@ -1290,9 +1320,9 @@ static void octal(struct DATA *p, longlong_t ll) {
 }
 
 /** Format @p ll number as ASCII hexadecimal string according to @p p flags. */
-static void hex(struct DATA *p, longlong_t ll) {
+static void hex(struct DATA *p, int64_t ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
-  const unsignedlonglong_t magnitude = (unsignedlonglong_t)ll;
+  const uint64_t magnitude = (uint64_t)ll;
   const char *prefix = NULL;
   size_t padding;
   size_t digits = inttoa(magnitude, 16, number, sizeof(number));
@@ -1311,8 +1341,8 @@ static void hex(struct DATA *p, longlong_t ll) {
     prefix = *p->pf == 'p' ? "0x" : (*p->pf == 'X' ? "0X" : "0x");
   }
 
-  width_minus(p, (longlong_t)digits +
-      (prefix != NULL ? (longlong_t)strlen(prefix) : 0));
+  width_minus(p, (int64_t)digits +
+      (prefix != NULL ? (int64_t)strlen(prefix) : 0));
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
     PUT_REPEAT('0', p, p->width);
@@ -1397,15 +1427,24 @@ static void strings(struct DATA *p, const char *s) {
 }
 
 static int special_float(struct DATA *p, double value) {
-  int is_nan = value != value;
-  int is_negative = value < 0.;
+#ifdef SNPRINTF_DOUBLE_BITS
+  const uint64_t bits = double_bits(value);
+  const int is_special = ((bits >> 52) & 0x7ffU) == 0x7ffU; /* all exponent bits */
+  const int is_nan = is_special && (bits & (((uint64_t)1 << 52) - 1)) != 0;
+  const int is_inf = is_special && !is_nan;
+  const int is_negative = !is_nan && (bits >> 63) != 0; /* NaN has no sign here */
+#else
+  const int is_nan = value != value;
+  const int is_inf = value > DBL_MAX || value < -DBL_MAX;
+  const int is_negative = value < 0.;
+#endif
   int is_upper = *p->pf == 'F' || *p->pf == 'E' || *p->pf == 'G';
   const char *text;
   char pad = p->pad;
 
   if (is_nan) {
     text = is_upper ? "NAN" : "nan";
-  } else if (value > DBL_MAX || value < -DBL_MAX) {
+  } else if (is_inf) {
     text = is_upper ? "INF" : "inf";
   } else {
     return 0;
@@ -1928,7 +1967,7 @@ if (string == NULL) {
           }
 
           case 'u': { /* unsigned decimal integer */
-            longlong_t ll;
+            int64_t ll;
             INTEGER_ARG(&data, unsigned, ll);
             decimal(&data, ll);
             is_continue = 0;
@@ -1937,7 +1976,7 @@ if (string == NULL) {
 
           case 'i':
           case 'd': { /* signed decimal integer */
-            longlong_t ll;
+            int64_t ll;
             INTEGER_ARG(&data, signed, ll);
             decimal(&data, ll);
             is_continue = 0;
@@ -1945,7 +1984,7 @@ if (string == NULL) {
           }
 
           case 'o': { /* octal (always unsigned) */
-            longlong_t ll;
+            int64_t ll;
             INTEGER_ARG(&data, unsigned, ll);
             octal(&data, ll);
             is_continue = 0;
@@ -1954,7 +1993,7 @@ if (string == NULL) {
 
           case 'x':
           case 'X': { /* hexadecimal (always unsigned) */
-            longlong_t ll;
+            int64_t ll;
             INTEGER_ARG(&data, unsigned, ll);
             hex(&data, ll);
             is_continue = 0;
@@ -2013,7 +2052,7 @@ if (string == NULL) {
               }
               strings(&data, "(nil)");
             } else {
-              hex(&data, (longlong_t)(size_t)v); /* no sign extension */
+              hex(&data, (int64_t)(size_t)v); /* no sign extension */
             }
             is_continue = 0;
             break;
@@ -2031,7 +2070,7 @@ if (string == NULL) {
             } else if (data.a_long == INT_LEN_LONG) {
               *va_arg(args, long *) = (long)output_count(&data);
             } else if (data.a_long == INT_LEN_LONG_LONG) {
-              *va_arg(args, longlong_t *) = (longlong_t)output_count(&data);
+              *va_arg(args, int64_t *) = (int64_t)output_count(&data);
             } else {
               *va_arg(args, int *) = (int)output_count(&data);
             }

@@ -2150,6 +2150,49 @@ MU_TEST(test_general_flags_width_and_precision) {
 }
 #endif
 
+#if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024
+static double double_from_bits(uint64_t bits) {
+	double d;
+
+	memcpy(&d, &bits, sizeof(d));
+	return d;
+}
+
+MU_TEST(test_special_floats_from_their_bits) {
+	// An infinity and a not-a-number are told from the bits of the double, so
+	// that -ffast-math cannot make them an endless loop. Every kind of NaN
+	// prints as nan without a sign, a zero keeps its sign.
+	int ret = snprintf(msg, sizeof(msg), "%g|%g",
+		double_from_bits(0x7ff0000000000000ULL), double_from_bits(0xfff0000000000000ULL));
+	TEST(8, "inf|-inf", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%g|%g|%g|%g",
+		double_from_bits(0x7ff8000000000000ULL), // quiet NaN
+		double_from_bits(0xfff8000000000000ULL), // quiet NaN, negative
+		double_from_bits(0x7ff0000000000001ULL), // signaling NaN
+		double_from_bits(0xfff123456789abcdULL)); // negative NaN with a payload
+	TEST(15, "nan|nan|nan|nan", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%G|%E|%F",
+		double_from_bits(0x7ff0000000000000ULL), double_from_bits(0xfff8000000000000ULL),
+		double_from_bits(0xfff0000000000000ULL));
+	TEST(12, "INF|NAN|-INF", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%+g|% g|%6.1f|%-6g|%06f",
+		double_from_bits(0x7ff0000000000000ULL), double_from_bits(0x7ff0000000000000ULL),
+		double_from_bits(0x7ff8000000000000ULL), double_from_bits(0xfff0000000000000ULL),
+		double_from_bits(0x7ff0000000000000ULL));
+	TEST(30, "+inf| inf|   nan|-inf  |   inf", ret);
+
+	// the neighbours of the special numbers are finite
+	ret = snprintf(msg, sizeof(msg), "%g|%g|%g",
+		double_from_bits(0x7fefffffffffffffULL), // DBL_MAX
+		double_from_bits(0x000fffffffffffffULL), // the biggest subnormal
+		double_from_bits(0x8000000000000000ULL)); // negative zero
+	TEST(28, "1.79769e+308|2.22507e-308|-0", ret);
+}
+#endif
+
 MU_TEST(test_counters) {
 	int counter1 = 0, counter2 = 0;
 	int ret = snprintf(msg, sizeof(msg), "%s%n %s%n%c",
@@ -2412,6 +2455,9 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_strict_mode_rejects_malformed_length_modifiers);
 #endif
 	MU_RUN_TEST(test_every_valid_order_of_a_specifier);
+#if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024
+	MU_RUN_TEST(test_special_floats_from_their_bits);
+#endif
 #if (!defined(SNPRINTF_FLOAT_PRECISION) || SNPRINTF_FLOAT_PRECISION >= 29) && \
     (!defined(SNPRINTF_FLOAT_INTEGRAL_DIGITS) || SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 40)
 	MU_RUN_TEST(test_general_and_exponent_of_small_numbers);
