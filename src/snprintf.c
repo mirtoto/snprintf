@@ -217,8 +217,8 @@ typedef unsigned long long unsignedlonglong_t;
 #endif
 
 /* Manual typedefs for types from <stdint.h> to stay pre-C99.
-   unsigned long is at least 32 bits per the C standard. */
-typedef unsigned long uint32_t;
+   unsigned int is 32 bits on ILP32/LP64/LLP64, matching the original <stdint.h> uint32_t. */
+typedef unsigned int uint32_t;
 
 /* SIZE_MAX was in <stdint.h>; use (size_t)-1 which is the maximum size_t. */
 #define SNPRINTF_SIZE_MAX ((size_t)-1)
@@ -2010,11 +2010,7 @@ if (string == NULL) {
               }
               strings(&data, "(nil)");
             } else {
-              unsigned char buf[sizeof(void *)];
-              unsignedlonglong_t ull = 0;
-              memcpy(buf, &v, sizeof(buf));
-              memcpy(&ull, buf, sizeof(buf));
-              hex(&data, (longlong_t)ull); /* no sign extension */
+              hex(&data, (longlong_t)(size_t)v); /* no sign extension */
             }
             is_continue = 0;
             break;
