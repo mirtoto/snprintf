@@ -2010,7 +2010,9 @@ if (string == NULL) {
               }
               strings(&data, "(nil)");
             } else {
-              hex(&data, (longlong_t)(size_t)v); /* no sign extension */
+              unsignedlonglong_t ull = 0;
+              memcpy(&ull, &v, sizeof(v));
+              hex(&data, (longlong_t)ull); /* no sign extension */
             }
             is_continue = 0;
             break;
