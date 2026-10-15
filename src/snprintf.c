@@ -220,6 +220,9 @@ typedef unsigned long long unsignedlonglong_t;
    unsigned int is 32 bits on ILP32/LP64/LLP64 platforms. */
 typedef unsigned int uint32_t;
 
+/* Compile-time assertion: int must be 32 bits for uint32_t to be valid. */
+typedef int snprintf_int_is_32_bit[sizeof(int) == 4 ? 1 : -1];
+
 /* SIZE_MAX was in <stdint.h>; use (size_t)-1 which is the maximum size_t. */
 #define SNPRINTF_SIZE_MAX ((size_t)-1)
 
