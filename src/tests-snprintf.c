@@ -1272,11 +1272,16 @@ MU_TEST(test_legacy_length_mode) {
 	int ret = snprintf(msg, 4, "%s", "0123456789ABCDEF");
 	TEST(3, "012", ret);
 
-	// %n behind full buffer is not reached
+	// %n behind full buffer is not reached, except in the strict mode, which
+	// always processes the whole format and stores what was written
 	int counter = -1;
 	ret = snprintf(msg, 4, "abcd%n", &counter);
 	TEST(3, "abc", ret);
+#ifdef SNPRINTF_STRICT
+	mu_assert_int_eq(3, counter);
+#else
 	mu_check(counter == -1);
+#endif
 }
 #endif
 

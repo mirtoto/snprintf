@@ -122,7 +122,7 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  * which is enough for the biggest double. Infinity is printed as inf and
  * not a number as nan, in capitals for F, E and G, and then the 0 flag is
  * ignored. The sign of NaN is not printed, and negative zero keeps a minus
-   * sign.
+ * sign.
  *
  * An infinity, a not-a-number and the sign of a zero are told from the bits of
  * the double, so the conversions also work when the code is built with
