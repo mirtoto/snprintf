@@ -65,6 +65,11 @@
  *    blocking 32-bit job, for -m32 and for -m32 -msse2 -mfpmath=sse.
  *  - Expanded tests: char width and alignment, pointer width,
  *    unsigned maxima, and sign-flag edge cases.
+ *  - Strict mode and the modifiers the C standard does not define: %% takes
+ *    nothing between its two characters, %n takes only a length modifier, %c
+ *    a width and the - flag, and %p the same plus a precision, so %5%, %l%,
+ *    %5n, %+c, %#c, %.2c and %+p fail. The flags of the integer conversions
+ *    are left alone, the C library gives them the same meaning everywhere.
  *  - Fast math: an infinity, a not-a-number and the sign of a zero are told
  *    from the bits of the double. Built with -ffast-math, or just
  *    -ffinite-math-only, the compiler dropped the comparisons that found
@@ -1841,6 +1846,16 @@ static int length_modifier(struct DATA *p, char c) {
 }
 
 /**
+ * Tell if the conversion has a flag, a width or a precision, a star too. The
+ * length modifier is not counted, len_count tells about it.
+ */
+static int has_flags_width_or_precision(const struct DATA *p) {
+  return p->is_square || p->is_plus || p->is_space || p->pad == '0' ||
+      p->align != ALIGN_UNSET || p->width != WIDTH_UNSET ||
+      p->precision != PRECISION_UNSET || p->is_dot;
+}
+
+/**
  * Tell if the length modifiers of a conversion suit a floating-point number: the
  * standard has none, or l, which changes nothing, and L, which is not supported.
  */
@@ -2010,6 +2025,11 @@ if (string == NULL) {
             if (data.a_long != INT_LEN_DEFAULT) {
               return fail(&data);
             }
+            /* a character has a width and the - flag, and nothing else */
+            if (data.is_square || data.is_plus || data.is_space ||
+                data.pad == '0' || data.is_dot) {
+              return fail(&data);
+            }
 #endif
             WIDTH_AND_PRECISION_ARGS(&data);
             i = va_arg(args, int);
@@ -2040,6 +2060,12 @@ if (string == NULL) {
             if (data.len_count != 0) { /* the standard has none for a pointer */
               return fail(&data);
             }
+            /* the flags that give a number a sign, a prefix or zeros mean
+               nothing for a pointer, the precision is the one of the hex digits */
+            if (data.is_square || data.is_plus || data.is_space ||
+                data.pad == '0') {
+              return fail(&data);
+            }
 #endif
             WIDTH_AND_PRECISION_ARGS(&data);
             void *v = va_arg(args, void *);
@@ -2059,6 +2085,13 @@ if (string == NULL) {
           }
 
           case 'n': /* Store the output count using the requested integer type. */
+#ifdef SNPRINTF_STRICT
+            /* the C standard does not define a flag, a width or a precision
+               for it, only the length modifier */
+            if (has_flags_width_or_precision(&data)) {
+              return fail(&data);
+            }
+#endif
             /* The C library reads the width and the precision
                arguments, a star is consumed even though it
                changes nothing. */
@@ -2133,6 +2166,13 @@ if (string == NULL) {
             break;
 
           case '%': /* nothing just % */
+#ifdef SNPRINTF_STRICT
+            /* the C standard has the whole specification as %% and nothing
+               between the two */
+            if (has_flags_width_or_precision(&data) || data.len_count != 0) {
+              return fail(&data);
+            }
+#endif
             /* The C library reads the width and the precision
                arguments, a star is consumed even though it
                changes nothing. */

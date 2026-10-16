@@ -1104,6 +1104,8 @@ MU_TEST(test_percent) {
 	TEST((int)strlen(str), str, ret);
 }
 
+#ifndef SNPRINTF_STRICT
+// the strict mode fails for a flag, a width or a precision of %%, see the strict tests
 MU_TEST(test_percent_flags) {
 	// the C library reads the flags, the width and the
 	// precision of a percent sign and prints it, a star
@@ -1140,6 +1142,7 @@ MU_TEST(test_percent_flags) {
 	ret = snprintf(msg, sizeof(msg), "%*.*%d", 5, 3, 42);
 	TEST(2, "%d", ret);
 }
+#endif
 
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -1891,7 +1894,41 @@ MU_TEST(test_strict_mode_rejects_malformed_length_modifiers) {
 		mu_assert(ret == -1, formats[f]);
 	}
 }
+
+MU_TEST(test_strict_mode_rejects_what_the_standard_does_not_define) {
+	// %% has nothing between its two characters, %n only a length modifier, %c a
+	// width and the - flag, %p the same and a precision.
+	static const char *const formats[] = {
+		"%#%", "%-5%", "%.%", "%5%", "%.3%", "%l%", "%*%", "%.*%", "%+%", "%hh%",
+		"%#c", "%+c", "% c", "%0c", "%.2c", "%.c", "%.*c",
+		"%+p", "% p", "%#p", "%0p",
+		"%5n", "%-n", "%.2n", "%+n", "%0n", "%#n", "% n", "%*n", "%.*n", "%*.*n",
+	};
+
+	for (size_t f = 0; f < sizeof formats / sizeof *formats; f++) {
+		int ret = snprintf(msg, sizeof(msg), formats[f], 7, 7, 7);
+		mu_assert(ret == -1, formats[f]);
+	}
+}
 #endif
+
+MU_TEST(test_what_the_standard_defines_for_c_p_n_and_percent) {
+	// What the strict mode must keep accepting, as the other modes do.
+	int n = -1;
+	long ln = -1;
+	signed char hhn = -1;
+	int ret = snprintf(msg, sizeof(msg), "%5c|%-5c|%*c|%%", 'a', 'b', 3, 'c');
+	TEST(17, "    a|b    |  c|%", ret);
+
+	ret = snprintf(msg, sizeof(msg), "%8p|%-8p|%.3p", (void *)0, (void *)0, (void *)0);
+	TEST(23, "   (nil)|(nil)   |(nil)", ret);
+
+	ret = snprintf(msg, sizeof(msg), "ab%n|%hhn|%ln", &n, &hhn, &ln);
+	TEST(4, "ab||", ret);
+	mu_assert_int_eq(2, n);
+	mu_assert_int_eq(3, hhn);
+	mu_assert_int_eq(4, (int)ln);
+}
 
 MU_TEST(test_every_valid_order_of_a_specifier) {
 	// What the strict mode must keep accepting, as the other modes do.
@@ -2207,6 +2244,8 @@ MU_TEST(test_counters) {
 	mu_assert_int_eq(11, counter2);
 }
 
+#ifndef SNPRINTF_STRICT
+// the strict mode fails for a flag, a width or a precision of %n, see the strict tests
 MU_TEST(test_counter_star_arguments) {
 	// the C library reads the width and the precision
 	// of %n, a star argument is consumed even though
@@ -2244,6 +2283,7 @@ MU_TEST(test_counter_star_arguments) {
 	TEST(3, "abc", ret);
 	mu_assert_int_eq(3, counter);
 }
+#endif
 
 MU_TEST(test_counter_length_modifiers) {
 	struct {
@@ -2412,9 +2452,13 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_pointer_precision);
 
 	MU_RUN_TEST(test_percent);
+#ifndef SNPRINTF_STRICT
 	MU_RUN_TEST(test_percent_flags);
+#endif
 	MU_RUN_TEST(test_counters);
+#ifndef SNPRINTF_STRICT
 	MU_RUN_TEST(test_counter_star_arguments);
+#endif
 	MU_RUN_TEST(test_counter_length_modifiers);
 	MU_RUN_TEST(test_unsigned_long_max);
 	MU_RUN_TEST(test_unsigned_ignores_plus_and_space_flags);
@@ -2458,7 +2502,9 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_strict_mode_terminates_the_buffer_on_failure);
 	MU_RUN_TEST(test_strict_mode_rejects_a_specifier_out_of_order);
 	MU_RUN_TEST(test_strict_mode_rejects_malformed_length_modifiers);
+	MU_RUN_TEST(test_strict_mode_rejects_what_the_standard_does_not_define);
 #endif
+	MU_RUN_TEST(test_what_the_standard_defines_for_c_p_n_and_percent);
 	MU_RUN_TEST(test_every_valid_order_of_a_specifier);
 #if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024
 	MU_RUN_TEST(test_special_floats_from_their_bits);

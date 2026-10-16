@@ -144,6 +144,11 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    characters. The strict mode rejects a length modifier on both of them,
  *    and on %s the flags the standard does not define there as well, and
  *    fails.
+ *  - The strict mode also fails for what the standard does not define for
+ *    a conversion: the flags + space # 0 and a precision with %c, the same
+ *    flags with %p, any flag, width, precision or length with %%, and any
+ *    flag, width or precision with %n, like %5%, %l%, %+c, %#c, %.2c, %+p and
+ *    %5n. The default mode takes them as it always did.
  *  - The precision of the floating-point conversions is limited to
  *    SNPRINTF_FLOAT_PRECISION digits, 29 by default. A bigger one is lowered
  *    to it, or refused with -1 in the strict mode.

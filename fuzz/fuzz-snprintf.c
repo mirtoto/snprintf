@@ -284,7 +284,12 @@ static int fuzz_char(void) {
   char fmt[128];
   int v = 'A' + (int)rnd(26);
 
+  /* the flags other than - are meaningless for a character, strict mode rejects them */
+#ifdef SNPRINTF_STRICT
+  make_spec(&s, "-", -1, "", 'c');
+#else
   make_spec(&s, "-+ #0", -1, "", 'c');
+#endif
   make_format(fmt, &s);
   sprintf(value_text, "%c", v);
   return CALL(fmt, s, v);
