@@ -7,6 +7,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdarg.h>
+
+/*
+ * minunit failure messages use C library.
+ */
+static int minunit_libc_snprintf(char *s, size_t n, const char *format, ...) {
+    va_list args; int ret;
+    va_start(args, format);
+    ret = vsnprintf(s, n, format, args);
+    va_end(args);
+    return ret;
+}
+
+#define MINUNIT_SNPRINTF minunit_libc_snprintf
 
 #include "snprintf.h"
 
