@@ -70,6 +70,13 @@
  *    a width and the - flag, and %p the same plus a precision, so %5%, %l%,
  *    %5n, %+c, %#c, %.2c and %+p fail. The flags of the integer conversions
  *    are left alone, the C library gives them the same meaning everywhere.
+ *  - snprintf.h includes <stdio.h> first when USE_SNPRINTF_PREFIX is defined.
+ *    Included before <stdio.h>, the renaming reached the fortified inline
+ *    snprintf() of glibc (turned on by some distributions at -O1 and above),
+ *    which then took the place of my_snprintf() and called __snprintf_chk() of
+ *    the C library: the output was the C library's, not this implementation's.
+ *    Without the prefix every file that includes <stdio.h> gets that call, which
+ *    snprintf.h now says: build with -U_FORTIFY_SOURCE.
  *  - Fast math: an infinity, a not-a-number and the sign of a zero are told
  *    from the bits of the double. Built with -ffast-math, or just
  *    -ffinite-math-only, the compiler dropped the comparisons that found

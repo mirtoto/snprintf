@@ -6,6 +6,15 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+#ifdef USE_SNPRINTF_PREFIX
+/* <stdio.h> comes first, whatever the order of the includes of the user. The
+   C library may declare snprintf() and vsnprintf() as fortified inline
+   functions or as macros, and after the defines at the end of this file they
+   would be taken for my_snprintf() and my_vsnprintf(), and call the C library
+   in place of this implementation. */
+#include <stdio.h>
+#endif
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -186,7 +195,14 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *  USE_SNPRINTF_PREFIX             | name the functions my_snprintf() and
  *                                  | my_vsnprintf(), and define snprintf and
  *                                  | vsnprintf as macros for them, to link
- *                                  | with the C library
+ *                                  | with the C library. Without it the
+ *                                  | functions are snprintf() and vsnprintf(),
+ *                                  | and a build with _FORTIFY_SOURCE, which
+ *                                  | some distributions turn on with -O1 and
+ *                                  | above, calls __snprintf_chk() of the C
+ *                                  | library from every file that includes
+ *                                  | <stdio.h>, not this implementation: add
+ *                                  | -U_FORTIFY_SOURCE then
  *  SNPRINTF_STRICT                 | return -1 for a malformed or unsupported
  *                                  | specifier, see above
  *  SNPRINTF_LEGACY_LENGTH          | return and store the number of characters
