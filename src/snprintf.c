@@ -324,8 +324,8 @@ struct DATA {
 #define COUNT_ADD(p, n)                                 \
   do {                                                  \
     size_t count_add_value = (n);                       \
-    (p)->counter = count_add_value > SIZE_MAX - (p)->counter ? \
-        SIZE_MAX : (p)->counter + count_add_value;      \
+    (p)->counter = count_add_value > (size_t)-1 - (p)->counter ? \
+        (size_t)-1 : (p)->counter + count_add_value;      \
   } while (0)
 
 /**
@@ -346,7 +346,7 @@ struct DATA {
       }                                                 \
       (p)->written++;                                   \
     }                                                   \
-    if ((p)->counter != SIZE_MAX) {                     \
+    if ((p)->counter != (size_t)-1) {                     \
       (p)->counter++;                                   \
     }                                                   \
   } while (0)
