@@ -203,6 +203,12 @@
 
 #include "snprintf.h"
 
+/* SIZE_MAX is defined in <stdint.h> (C99); provide it manually for
+   pre-C99 compilers that lack that header. */
+#ifndef SIZE_MAX
+#define SIZE_MAX ((size_t)-1)
+#endif
+
 /* Portable replacements for <ctype.h> functions. */
 static int snprintf_isdigit(int c) {
   /* (c - '0') is negative for anything below '0', and the unsigned conversion
@@ -324,8 +330,8 @@ struct DATA {
 #define COUNT_ADD(p, n)                                 \
   do {                                                  \
     size_t count_add_value = (n);                       \
-    (p)->counter = count_add_value > (size_t)-1 - (p)->counter ? \
-        (size_t)-1 : (p)->counter + count_add_value;      \
+    (p)->counter = count_add_value > SIZE_MAX - (p)->counter ? \
+        SIZE_MAX : (p)->counter + count_add_value;      \
   } while (0)
 
 /**
@@ -346,7 +352,7 @@ struct DATA {
       }                                                 \
       (p)->written++;                                   \
     }                                                   \
-    if ((p)->counter != (size_t)-1) {                     \
+    if ((p)->counter != SIZE_MAX) {                     \
       (p)->counter++;                                   \
     }                                                   \
   } while (0)
