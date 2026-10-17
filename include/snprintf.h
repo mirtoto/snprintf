@@ -233,7 +233,8 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  * 
  * @retval >=0 Number of characters of the whole output, not counting the
  *             terminating '\0', also when the output is truncated. An output
- *             longer than INT_MAX is reported as INT_MAX. With
+ *             longer than INT_MAX is reported as INT_MAX, and so is the value
+ *             %n stores into an int. With
  *             SNPRINTF_LEGACY_LENGTH it is the number of characters written,
  *             that is @p length - 1, for a truncated output.
  * @retval  -1 The strict mode does not accept the @p format.

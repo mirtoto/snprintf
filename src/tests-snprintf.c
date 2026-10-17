@@ -1963,6 +1963,24 @@ MU_TEST(test_every_valid_order_of_a_specifier) {
 	TEST(27, "1.500000|  2.2|5.000000e-01", ret);
 }
 
+#ifndef SNPRINTF_LEGACY_LENGTH
+MU_TEST(test_output_length_stops_at_int_max) {
+	// Several widths which add up to more than a 32-bit size_t holds: the length
+	// is INT_MAX, as it is for one of them, and does not wrap round.
+	int n = -1;
+	int ret = snprintf(NULL, 0, "%*d%*d%*d%*d%*d",
+		INT_MAX, 1, INT_MAX, 2, INT_MAX, 3, INT_MAX, 4, INT_MAX, 5);
+	mu_assert_int_eq(INT_MAX, ret);
+
+	// %n into an int takes at most INT_MAX too. Five of them are 10737418235,
+	// which is 2147483643 as an int, not INT_MAX, with a 64-bit size_t as well.
+	ret = snprintf(msg, sizeof(msg), "%*d%*d%*d%*d%*d%n",
+		INT_MAX, 1, INT_MAX, 2, INT_MAX, 3, INT_MAX, 4, INT_MAX, 5, &n);
+	mu_assert_int_eq(INT_MAX, ret);
+	mu_assert_int_eq(INT_MAX, n);
+}
+#endif
+
 #ifndef SNPRINTF_STRICT
 MU_TEST(test_flags_after_the_length_keep_the_length) {
 	// Not a valid specifier, but the argument is still read as the type the
@@ -2519,6 +2537,9 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_strict_mode_rejects_what_the_standard_does_not_define);
 #endif
 	MU_RUN_TEST(test_what_the_standard_defines_for_c_p_n_and_percent);
+#ifndef SNPRINTF_LEGACY_LENGTH
+	MU_RUN_TEST(test_output_length_stops_at_int_max);
+#endif
 	MU_RUN_TEST(test_every_valid_order_of_a_specifier);
 #if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024
 	MU_RUN_TEST(test_special_floats_from_their_bits);

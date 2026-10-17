@@ -77,6 +77,11 @@
  *    the C library: the output was the C library's, not this implementation's.
  *    Without the prefix every file that includes <stdio.h> gets that call, which
  *    snprintf.h now says: build with -U_FORTIFY_SOURCE.
+ *  - The length of the output stops at SIZE_MAX while it is counted and no
+ *    longer wraps round. Where size_t has 32 bits, five %*d with INT_MAX gave
+ *    2147483643 and not the INT_MAX the header promises. %n into an int stores
+ *    at most INT_MAX too, like the return value, where it stored the count cut
+ *    to an int: 2147483643 after five of them, with 64-bit size_t as well.
  *  - Fast math: an infinity, a not-a-number and the sign of a zero are told
  *    from the bits of the double. Built with -ffast-math, or just
  *    -ffinite-math-only, the compiler dropped the comparisons that found
@@ -311,6 +316,19 @@ struct DATA {
 };
 
 /**
+ * Add @p n to DATA::counter, which stops at SIZE_MAX and does not wrap round.
+ * Where size_t has 32 bits a few huge widths, like %*d with INT_MAX, add up to
+ * more than it holds, and output_length() would take the wrapped number for the
+ * length of the output instead of the INT_MAX it promises.
+ */
+#define COUNT_ADD(p, n)                                 \
+  do {                                                  \
+    size_t count_add_value = (n);                       \
+    (p)->counter = count_add_value > SIZE_MAX - (p)->counter ? \
+        SIZE_MAX : (p)->counter + count_add_value;      \
+  } while (0)
+
+/**
  * Put a @p c character to output buffer if there is enough space.
  * The @p c is evaluated once, even when there is no space or no buffer, so it
  * can have side effects, like PUT_CHAR(*text++, p).
@@ -328,7 +346,9 @@ struct DATA {
       }                                                 \
       (p)->written++;                                   \
     }                                                   \
-    (p)->counter++;                                     \
+    if ((p)->counter != SIZE_MAX) {                     \
+      (p)->counter++;                                   \
+    }                                                   \
   } while (0)
 
 /**
@@ -349,7 +369,7 @@ struct DATA {
       (p)->ps += repeat_count;                          \
     }                                                   \
     (p)->written += repeat_count;                       \
-    (p)->counter += repeat_total;                       \
+    COUNT_ADD(p, repeat_total);                         \
   } while (0)
 
 /**
@@ -1433,7 +1453,7 @@ static void strings(struct DATA *p, const char *s) {
     p->ps += copy_length;
   }
   p->written += copy_length;
-  p->counter += len; /* the whole string counts, not only the part written */
+  COUNT_ADD(p, len); /* the whole string counts, not only the part written */
 
   PAD_AFTER(p);
 }
@@ -2111,8 +2131,8 @@ if (string == NULL) {
               *va_arg(args, long *) = (long)output_count(&data);
             } else if (data.a_long == INT_LEN_LONG_LONG) {
               *va_arg(args, int64_t *) = (int64_t)output_count(&data);
-            } else {
-              *va_arg(args, int *) = (int)output_count(&data);
+            } else { /* an int takes at most INT_MAX, as the return value does */
+              *va_arg(args, int *) = output_length(output_count(&data));
             }
             is_continue = 0;
             break;
