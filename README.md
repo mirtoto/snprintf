@@ -96,6 +96,43 @@ In particular:
 
 This is a good default for portability and compatibility, but it is not a safety-oriented validation layer.
 
+### Behavioral guarantees
+
+The implementation is intentionally designed around libc-like `snprintf()` semantics, with a few documented differences.
+
+- The return value is the length of the whole output, not only the number of bytes that fit in the buffer, unless `SNPRINTF_LEGACY_LENGTH` is defined.
+- A `NULL` output pointer with `length == 0` is treated as a length-only probe and returns the number of characters that would be produced.
+- A `NULL` output pointer with a nonzero length is also treated as a measurement call, as the C library does; nothing is written.
+- `%n` stores the output count seen so far, matching the C99 contract. In legacy mode it stores the number of characters written into the buffer instead.
+- For integer and string conversions, a precision is a minimum width for integers and a maximum number of bytes for strings; it never truncates the value in the integer case.
+- The buffer is always NUL-terminated when a writable target is supplied, even when the output is truncated.
+- Width and alignment follow the usual `printf` rules; when the format requests more output than the buffer can hold, only the prefix is written and the rest is counted for the return value.
+
+### Unsupported and malformed specifiers
+
+The parser is permissive by default and tries to remain compatible with libc-style formatter behavior instead of rejecting malformed input immediately.
+
+This includes cases where the implementation treats unsupported or malformed fragments as text instead of failing:
+
+- `%5k` prints `%` and continues with text; the unsupported conversion is effectively ignored.
+- `%La` prints `%a` and then continues with the remaining format.
+- `%1$d` is not supported and is treated as `%d` with the next argument consumed by the unsupported placeholder.
+- A format fragment after a non-standard or unknown conversion is treated as ordinary text, so the rest of the format still proceeds.
+
+This permissive behavior is deliberate. It keeps the formatter portable and libc-like for embedded use, but it is not a strict validator and should not be treated as a parsing-safety layer.
+
+### Pointer formatting and platform dependence
+
+`%p` is inherently implementation-defined, and the exact textual form depends on the target platform and the C library. This implementation does not promise a single universal pointer representation across all toolchains.
+
+In practice:
+
+- a `NULL` pointer prints `(nil)`
+- a non-NULL pointer prints hexadecimal digits, commonly with a `0x` prefix
+- the presence or absence of the `0x` prefix, the exact casing, and the width/precision behavior may vary by platform and libc behavior
+
+The implementation tries to match common libc conventions for portable code, but callers should not treat `%p` as a stable cross-platform serialization format.
+
 ### Differences to the C library
 
 - `%g` and `%G` with the `#` flag always print as many significant digits as the precision says, also when rounding makes the number a power of ten, as the C standard requires: `%#g` of `999999.5` is `1.00000e+06`, where glibc prints `1.e+06`.
