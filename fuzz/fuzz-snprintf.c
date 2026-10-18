@@ -238,7 +238,15 @@ static int fuzz_integer(void) {
   struct spec s;
   char fmt[128];
 
+  /* in the strict mode the + and space flags are refused for unsigned
+     conversions, so they are never generated there */
+#ifdef SNPRINTF_STRICT
+  /* the + and space flags are refused for unsigned conversions, so they are
+     never generated there; '-', '#' and '0' still match the C library */
+  make_spec(&s, is_unsigned ? "-#0" : "-+ #0", MAX_INTEGER_PRECISION, length, conversion);
+#else
   make_spec(&s, "-+ #0", MAX_INTEGER_PRECISION, length, conversion);
+#endif
   make_format(fmt, &s);
   sprintf(value_text, "%lld", v);
 
