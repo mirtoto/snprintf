@@ -41,7 +41,7 @@ OBJECTS		:= $(SOURCES:.c=.o)
 
 all: $(BIN)/$(EXECUTABLE)
 
-.PHONY: clean coverage
+.PHONY: clean coverage check-headers check-c89
 clean:
 	-$(RM) $(BIN)/$(EXECUTABLE)
 	-$(RM) $(OBJECTS)
@@ -55,6 +55,15 @@ coverage:
 
 run: all
 	./$(BIN)/$(EXECUTABLE)
+
+# snprintf.c must compile with the standard headers already in scope, as with a
+# -include or in a one file build, and, with SNPRINTF_NO_LONGLONG, as C89.
+check-headers:
+	$(CC) -DUSE_SNPRINTF_PREFIX $(CINCLUDES) -include stdint.h -include stdlib.h -include inttypes.h -c src/snprintf.c -o /dev/null
+	$(CC) $(CINCLUDES) -include stdint.h -include sys/types.h -c src/snprintf.c -o /dev/null
+
+check-c89:
+	$(CC) -std=c89 -pedantic-errors -Wall -Wextra -DSNPRINTF_NO_LONGLONG -DUSE_SNPRINTF_PREFIX $(CINCLUDES) -c src/snprintf.c -o /dev/null
 
 .c.o:
 	$(CC) $(CFLAGS) $(COVFLAGS) $(CINCLUDES) -c $< -o $@

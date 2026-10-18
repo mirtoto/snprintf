@@ -77,11 +77,19 @@
  *    the C library: the output was the C library's, not this implementation's.
  *    Without the prefix every file that includes <stdio.h> gets that call, which
  *    snprintf.h now says: build with -U_FORTIFY_SOURCE.
- *  - The length of the output stops at SIZE_MAX while it is counted and no
+ *  - The length of the output stops at SNPRINTF_SIZE_MAX while it is counted and no
  *    longer wraps round. Where size_t has 32 bits, five %*d with INT_MAX gave
  *    2147483643 and not the INT_MAX the header promises. %n into an int stores
  *    at most INT_MAX too, like the return value, where it stored the count cut
  *    to an int: 2147483643 after five of them, with 64-bit size_t as well.
+ *  - The internal types are snprintf_i64, snprintf_u64 and snprintf_u32, not
+ *    int64_t, uint64_t and uint32_t: defined here under the names of <stdint.h>
+ *    they made the file fail to compile whenever <stdint.h>, <stdlib.h> or
+ *    <sys/types.h> was in scope first (-include, a project header, one file
+ *    build). The 32-bit limb is unsigned long where int has 16 bits, which the
+ *    sizeof(int) == 4 assertion made a compile error. -std=c89 -pedantic-errors
+ *    with SNPRINTF_NO_LONGLONG compiles: the one declaration after a statement
+ *    in %p is gone.
  *  - Fast math: an infinity, a not-a-number and the sign of a zero are told
  *    from the bits of the double. Built with -ffast-math, or just
  *    -ffinite-math-only, the compiler dropped the comparisons that found
@@ -203,12 +211,6 @@
 
 #include "snprintf.h"
 
-/* SIZE_MAX is defined in <stdint.h> (C99); provide it manually for
-   pre-C99 compilers that lack that header. */
-#ifndef SIZE_MAX
-#define SIZE_MAX ((size_t)-1)
-#endif
-
 /* Portable replacements for <ctype.h> functions. */
 static int snprintf_isdigit(int c) {
   /* (c - '0') is negative for anything below '0', and the unsigned conversion
@@ -222,10 +224,12 @@ static int snprintf_hex_toupper(int c) {
 
 
 /**
- * Internal types for long long handling.
- * Defined here to avoid polluting the public header and colliding with
- * system headers like <sys/types.h> on illumos/Solaris which defines
- * int64_t.
+ * Internal integer types, under names of this file. They are not snprintf_i64,
+ * snprintf_u64 and snprintf_u32: those are the names of <stdint.h>, and defining them
+ * here fails as soon as any header in scope has them, with another underlying
+ * type, like long against long long for snprintf_i64 on LP64, which a -include of
+ * <stdint.h> or <stdlib.h> is enough for. They are defined here and not in the
+ * public header to avoid polluting it.
  *
  * Optional no-long-long mode: when SNPRINTF_NO_LONGLONG is defined, the
  * accumulator falls back to long / unsigned long, for toolchains that lack
@@ -234,23 +238,29 @@ static int snprintf_hex_toupper(int c) {
  * a target where unsigned long is narrower than 64 bits.
  */
 #ifdef SNPRINTF_NO_LONGLONG
-typedef long int64_t;
-typedef unsigned long uint64_t;
-#define INT64_T long
+typedef long snprintf_i64;
+typedef unsigned long snprintf_u64;
+#define SNPRINTF_I64 long
 #else
-typedef long long int64_t;
-typedef unsigned long long uint64_t;
-#define INT64_T long long
+typedef long long snprintf_i64;
+typedef unsigned long long snprintf_u64;
+#define SNPRINTF_I64 long long
 #endif
 
-/* Manual typedefs for types from <stdint.h> to stay pre-C99.
-   unsigned int is 32 bits on ILP32/LP64/LLP64 platforms. */
-typedef unsigned int uint32_t;
+/*
+ * The limbs of the floating-point conversions are 32 bits: the arithmetic on
+ * them cuts a product at 2^32. Take the unsigned type of exactly 32 bits, which
+ * is unsigned int, and unsigned long where int has 16 bits (AVR, MSP430).
+ */
+#if UINT_MAX == 0xffffffffUL
+typedef unsigned int snprintf_u32;
+#elif ULONG_MAX == 0xffffffffUL
+typedef unsigned long snprintf_u32;
+#else
+#error "snprintf.c needs an unsigned type of exactly 32 bits"
+#endif
 
-/* Compile-time assertion: int must be 32 bits for uint32_t to be valid. */
-typedef int snprintf_int_is_32_bit[sizeof(int) == 4 ? 1 : -1];
-
-/* SIZE_MAX was in <stdint.h>; use (size_t)-1 which is the maximum size_t. */
+/* The maximum of size_t, which SNPRINTF_SIZE_MAX of <stdint.h> is, without C99. */
 #define SNPRINTF_SIZE_MAX ((size_t)-1)
 
 
@@ -322,7 +332,7 @@ struct DATA {
 };
 
 /**
- * Add @p n to DATA::counter, which stops at SIZE_MAX and does not wrap round.
+ * Add @p n to DATA::counter, which stops at SNPRINTF_SIZE_MAX and does not wrap round.
  * Where size_t has 32 bits a few huge widths, like %*d with INT_MAX, add up to
  * more than it holds, and output_length() would take the wrapped number for the
  * length of the output instead of the INT_MAX it promises.
@@ -330,8 +340,8 @@ struct DATA {
 #define COUNT_ADD(p, n)                                 \
   do {                                                  \
     size_t count_add_value = (n);                       \
-    (p)->counter = count_add_value > SIZE_MAX - (p)->counter ? \
-        SIZE_MAX : (p)->counter + count_add_value;      \
+    (p)->counter = count_add_value > SNPRINTF_SIZE_MAX - (p)->counter ? \
+        SNPRINTF_SIZE_MAX : (p)->counter + count_add_value;      \
   } while (0)
 
 /**
@@ -352,7 +362,7 @@ struct DATA {
       }                                                 \
       (p)->written++;                                   \
     }                                                   \
-    if ((p)->counter != SIZE_MAX) {                     \
+    if ((p)->counter != SNPRINTF_SIZE_MAX) {                     \
       (p)->counter++;                                   \
     }                                                   \
   } while (0)
@@ -481,9 +491,9 @@ static void terminate_buffer(struct DATA *p) {
 #define INTEGER_ARG(p, type, ll)                        \
   WIDTH_AND_PRECISION_ARGS(p);                          \
   if ((p)->a_long == INT_LEN_LONG_LONG) {               \
-    ll = (int64_t)va_arg(args, type INT64_T);     \
+    ll = (snprintf_i64)va_arg(args, type SNPRINTF_I64);     \
   } else if ((p)->a_long == INT_LEN_LONG) {             \
-    ll = (int64_t)va_arg(args, type long);           \
+    ll = (snprintf_i64)va_arg(args, type long);           \
   } else {                                              \
     type int a = va_arg(args, type int);                \
     if ((p)->a_long == INT_LEN_SHORT) {                 \
@@ -589,16 +599,16 @@ static size_t strtoi(const char *a, int *res) {
  *
  * @return Number of digits written.
  */
-static size_t inttoa(uint64_t n, int base, char *output,
+static size_t inttoa(snprintf_u64 n, int base, char *output,
     size_t output_size) {
   size_t i = 0, j, count;
 
   output_size--; /* for '\0' character */
 
   while (n != 0 && i < output_size) {
-    int r = (int)(n % (uint64_t)base);
+    int r = (int)(n % (snprintf_u64)base);
     output[i++] = (char)(r + (r < 10 ? '0' : 'a' - 10));
-    n /= (uint64_t)base;
+    n /= (snprintf_u64)base;
   }
 
   if (i == 0) { /* a zero value is one '0' digit */
@@ -620,11 +630,11 @@ static size_t inttoa(uint64_t n, int base, char *output,
 /**
  * Magnitude of a @c long @c long, also correct for LLONG_MIN.
  */
-static uint64_t magnitude_of(int64_t number) {
+static snprintf_u64 magnitude_of(snprintf_i64 number) {
   if (number < 0) {
-    return (uint64_t)(-(number + 1)) + 1UL;
+    return (snprintf_u64)(-(number + 1)) + 1UL;
   }
-  return (uint64_t)number;
+  return (snprintf_u64)number;
 }
 
 /**
@@ -662,8 +672,8 @@ static int integer_field(const struct DATA *p, size_t digits,
     (!defined(SNPRINTF_NO_LONGLONG) || ULONG_MAX > 0xffffffffUL)
 #define SNPRINTF_DOUBLE_BITS
 /** The bits of @p d: the sign, 11 bits of exponent, 52 bits of mantissa. */
-static uint64_t double_bits(double d) {
-  uint64_t bits;
+static snprintf_u64 double_bits(double d) {
+  snprintf_u64 bits;
 
   memcpy(&bits, &d, sizeof(bits));
   return bits;
@@ -727,7 +737,7 @@ static double integral(double real, double *ip) {
   }
 
   /* the real work :-) */
-  *ip = (double)(uint64_t)real; /* truncation is exact */
+  *ip = (double)(snprintf_u64)real; /* truncation is exact */
   return (real - *ip);
 #endif
 }
@@ -778,8 +788,8 @@ static double integral(double real, double *ip) {
  *
  * @return Number of limbs (at least 1), or 0 if @p value does not fit.
  */
-static size_t integer_limbs(double value, uint32_t *limbs) {
-  uint64_t n;
+static size_t integer_limbs(double value, snprintf_u32 *limbs) {
+  snprintf_u64 n;
   size_t used = 0, i;
   int shift = 0;
 
@@ -787,29 +797,29 @@ static size_t integer_limbs(double value, uint32_t *limbs) {
     value /= 2.; /* exact, only the exponent changes */
     shift++;
   }
-  n = (uint64_t)value;
+  n = (snprintf_u64)value;
 
   do {
     if (used == INTEGER_LIMBS) {
       return 0;
     }
-    limbs[used++] = (uint32_t)(n % INTEGER_LIMB_BASE);
+    limbs[used++] = (snprintf_u32)(n % INTEGER_LIMB_BASE);
     n /= INTEGER_LIMB_BASE;
   } while (n != 0);
 
   while (shift > 0) { /* multiply by 2^bits, at most 2^30 to stay below 2^64 */
     int bits = shift < 30 ? shift : 30;
-    uint64_t carry = 0;
+    snprintf_u64 carry = 0;
     for (i = 0; i < used; i++) {
-      uint64_t v = ((uint64_t)limbs[i] << bits) + carry;
-      limbs[i] = (uint32_t)(v % INTEGER_LIMB_BASE);
+      snprintf_u64 v = ((snprintf_u64)limbs[i] << bits) + carry;
+      limbs[i] = (snprintf_u32)(v % INTEGER_LIMB_BASE);
       carry = v / INTEGER_LIMB_BASE;
     }
     for (; carry != 0; carry /= INTEGER_LIMB_BASE) {
       if (used == INTEGER_LIMBS) {
         return 0;
       }
-      limbs[used++] = (uint32_t)(carry % INTEGER_LIMB_BASE);
+      limbs[used++] = (snprintf_u32)(carry % INTEGER_LIMB_BASE);
     }
     shift -= bits;
   }
@@ -826,7 +836,7 @@ static size_t integer_limbs(double value, uint32_t *limbs) {
  *         @p size digits.
  */
 static size_t integer_digits(double value, char *output, size_t size) {
-  uint32_t limbs[INTEGER_LIMBS];
+  snprintf_u32 limbs[INTEGER_LIMBS];
   size_t used = integer_limbs(value, limbs);
   size_t count = 0, i;
 
@@ -835,7 +845,7 @@ static size_t integer_digits(double value, char *output, size_t size) {
   }
 
   for (i = 0; i < used; i++) {
-    uint32_t v = limbs[i];
+    snprintf_u32 v = limbs[i];
     int digits;
     for (digits = 0; digits < LIMB_DIGITS; digits++) {
       if (i == used - 1 && v == 0) { /* no leading zeros */
@@ -870,10 +880,10 @@ static size_t integer_digits(double value, char *output, size_t size) {
  */
 static int integer_top(double value, size_t count, char *output,
     size_t *total, int *sticky) {
-  uint32_t limbs[INTEGER_LIMBS];
+  snprintf_u32 limbs[INTEGER_LIMBS];
   size_t used = integer_limbs(value, limbs);
   size_t taken = 0, i, d, lead = 1;
-  uint32_t v;
+  snprintf_u32 v;
   char text[LIMB_DIGITS];
 
   if (used == 0) {
@@ -924,14 +934,14 @@ static int integer_top(double value, size_t count, char *output,
  * carry out of the most significant limb.
  */
 struct FRACTION {
-  uint32_t limbs[FRACTION_LIMBS]; /**< bits of the fraction, least significant first */
+  snprintf_u32 limbs[FRACTION_LIMBS]; /**< bits of the fraction, least significant first */
   size_t first;                   /**< lowest limb that can be non-zero */
 };
 
 /** Set @p f to @p value, where 0 <= @p value < 1. */
 static void fraction_init(struct FRACTION *f, double value) {
-  uint64_t mantissa;
-  uint32_t low, high;
+  snprintf_u64 mantissa;
+  snprintf_u32 low, high;
   size_t i, words;
   int scale = 52;
   int bits;
@@ -950,13 +960,13 @@ static void fraction_init(struct FRACTION *f, double value) {
     value *= 2.; /* exact, only the exponent changes */
     scale++;
   }
-  mantissa = (uint64_t)(value * 4503599627370496.); /* 2^52 */
+  mantissa = (snprintf_u64)(value * 4503599627370496.); /* 2^52 */
 
   /* limbs = mantissa * 2^(FRACTION_LIMBS * 32 - scale) */
   words = (size_t)(FRACTION_LIMBS * 32 - scale) / 32;
   bits = (FRACTION_LIMBS * 32 - scale) % 32;
-  low = (uint32_t)(mantissa & 0xffffffffUL);
-  high = (uint32_t)(mantissa >> 32);
+  low = (snprintf_u32)(mantissa & 0xffffffffUL);
+  high = (snprintf_u32)(mantissa >> 32);
   f->limbs[words] = low << bits;
   if (words + 1 < FRACTION_LIMBS) {
     f->limbs[words + 1] = (high << bits) | (bits != 0 ? low >> (32 - bits) : 0);
@@ -978,20 +988,20 @@ static void fraction_init(struct FRACTION *f, double value) {
  * @return The next decimal digit for a multiplier of 10, the next nine digits
  *         for 10^9.
  */
-static uint32_t fraction_mul(struct FRACTION *f, uint32_t multiplier) {
-  uint64_t carry = 0;
+static snprintf_u32 fraction_mul(struct FRACTION *f, snprintf_u32 multiplier) {
+  snprintf_u64 carry = 0;
   size_t j;
 
   for (j = f->first; j < FRACTION_LIMBS; j++) {
-    uint64_t v = (uint64_t)f->limbs[j] * multiplier + carry;
-    f->limbs[j] = (uint32_t)v;
+    snprintf_u64 v = (snprintf_u64)f->limbs[j] * multiplier + carry;
+    f->limbs[j] = (snprintf_u32)v;
     carry = v >> 32;
   }
   while (f->first < FRACTION_LIMBS && f->limbs[f->first] == 0) {
     f->first++;
   }
 
-  return (uint32_t)carry;
+  return (snprintf_u32)carry;
 }
 
 /** Take the next decimal digit of @p f off the fraction. */
@@ -1254,17 +1264,17 @@ static void emit_format_prefix(struct DATA *p, const char *prefix) {
  * Subtract the length of the field content from DATA::width, saturating
  * to INT_MIN for extreme precision values to avoid overflow.
  */
-static void width_minus(struct DATA *p, int64_t content) {
+static void width_minus(struct DATA *p, snprintf_i64 content) {
   p->width = content > INT_MAX ? INT_MIN : p->width - (int)content;
 }
 
 /** Format @p ll number as ASCII decimal string according to @p p flags. */
-static void decimal(struct DATA *p, int64_t ll) {
+static void decimal(struct DATA *p, snprintf_i64 ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
   const int is_signed = *p->pf == 'i' || *p->pf == 'd';
   const int is_negative = is_signed && ll < 0;
-  const uint64_t magnitude =
-      is_signed ? magnitude_of(ll) : (uint64_t)ll;
+  const snprintf_u64 magnitude =
+      is_signed ? magnitude_of(ll) : (snprintf_u64)ll;
   size_t padding;
   size_t digits = inttoa(magnitude, 10, number, sizeof(number));
   int sign = 0;
@@ -1285,7 +1295,7 @@ static void decimal(struct DATA *p, int64_t ll) {
     sign = 1; /* '+' and ' ' apply to signed conversions only */
   }
 
-  width_minus(p, (int64_t)digits + sign);
+  width_minus(p, (snprintf_i64)digits + sign);
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     if (sign) {
       emit_sign_prefix(p, is_negative);
@@ -1309,9 +1319,9 @@ static void decimal(struct DATA *p, int64_t ll) {
 }
 
 /** Format @p ll number as ASCII octal string according to @p p flags. */
-static void octal(struct DATA *p, int64_t ll) {
+static void octal(struct DATA *p, snprintf_i64 ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
-  const uint64_t magnitude = (uint64_t)ll;
+  const snprintf_u64 magnitude = (snprintf_u64)ll;
   const char *prefix = NULL;
   size_t padding;
   size_t digits = inttoa(magnitude, 8, number, sizeof(number));
@@ -1338,7 +1348,7 @@ static void octal(struct DATA *p, int64_t ll) {
     }
   }
 
-  width_minus(p, (int64_t)digits + (prefix != NULL ? 1 : 0));
+  width_minus(p, (snprintf_i64)digits + (prefix != NULL ? 1 : 0));
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
     PUT_REPEAT('0', p, p->width);
@@ -1358,9 +1368,9 @@ static void octal(struct DATA *p, int64_t ll) {
 }
 
 /** Format @p ll number as ASCII hexadecimal string according to @p p flags. */
-static void hex(struct DATA *p, int64_t ll) {
+static void hex(struct DATA *p, snprintf_i64 ll) {
   char number[MAX_INTEGRAL_SIZE], *pnumber = number;
-  const uint64_t magnitude = (uint64_t)ll;
+  const snprintf_u64 magnitude = (snprintf_u64)ll;
   const char *prefix = NULL;
   size_t padding;
   size_t digits = inttoa(magnitude, 16, number, sizeof(number));
@@ -1379,8 +1389,8 @@ static void hex(struct DATA *p, int64_t ll) {
     prefix = *p->pf == 'p' ? "0x" : (*p->pf == 'X' ? "0X" : "0x");
   }
 
-  width_minus(p, (int64_t)digits +
-      (prefix != NULL ? (int64_t)strlen(prefix) : 0));
+  width_minus(p, (snprintf_i64)digits +
+      (prefix != NULL ? (snprintf_i64)strlen(prefix) : 0));
   if (p->pad == '0' && p->align != ALIGN_LEFT) {
     emit_format_prefix(p, prefix);
     PUT_REPEAT('0', p, p->width);
@@ -1466,9 +1476,9 @@ static void strings(struct DATA *p, const char *s) {
 
 static int special_float(struct DATA *p, double value) {
 #ifdef SNPRINTF_DOUBLE_BITS
-  const uint64_t bits = double_bits(value);
+  const snprintf_u64 bits = double_bits(value);
   const int is_special = ((bits >> 52) & 0x7ffU) == 0x7ffU; /* all exponent bits */
-  const int is_nan = is_special && (bits & (((uint64_t)1 << 52) - 1)) != 0;
+  const int is_nan = is_special && (bits & (((snprintf_u64)1 << 52) - 1)) != 0;
   const int is_inf = is_special && !is_nan;
   const int is_negative = !is_nan && (bits >> 63) != 0; /* NaN has no sign here */
 #else
@@ -2015,7 +2025,7 @@ if (string == NULL) {
           }
 
           case 'u': { /* unsigned decimal integer */
-            int64_t ll;
+            snprintf_i64 ll;
             INTEGER_ARG(&data, unsigned, ll);
             decimal(&data, ll);
             is_continue = 0;
@@ -2024,7 +2034,7 @@ if (string == NULL) {
 
           case 'i':
           case 'd': { /* signed decimal integer */
-            int64_t ll;
+            snprintf_i64 ll;
             INTEGER_ARG(&data, signed, ll);
             decimal(&data, ll);
             is_continue = 0;
@@ -2032,7 +2042,7 @@ if (string == NULL) {
           }
 
           case 'o': { /* octal (always unsigned) */
-            int64_t ll;
+            snprintf_i64 ll;
             INTEGER_ARG(&data, unsigned, ll);
             octal(&data, ll);
             is_continue = 0;
@@ -2041,7 +2051,7 @@ if (string == NULL) {
 
           case 'x':
           case 'X': { /* hexadecimal (always unsigned) */
-            int64_t ll;
+            snprintf_i64 ll;
             INTEGER_ARG(&data, unsigned, ll);
             hex(&data, ll);
             is_continue = 0;
@@ -2089,6 +2099,7 @@ if (string == NULL) {
             break;
 
           case 'p': { /* pointer */
+            void *v;
 #ifdef SNPRINTF_STRICT
             if (data.len_count != 0) { /* the standard has none for a pointer */
               return fail(&data);
@@ -2101,7 +2112,7 @@ if (string == NULL) {
             }
 #endif
             WIDTH_AND_PRECISION_ARGS(&data);
-            void *v = va_arg(args, void *);
+            v = va_arg(args, void *);
             data.is_square = 1;
             if (v == NULL) {
               /* The C library prints the whole "(nil)", a precision
@@ -2111,7 +2122,7 @@ if (string == NULL) {
               }
               strings(&data, "(nil)");
             } else {
-              hex(&data, (int64_t)(size_t)v); /* no sign extension */
+              hex(&data, (snprintf_i64)(size_t)v); /* no sign extension */
             }
             is_continue = 0;
             break;
@@ -2136,7 +2147,7 @@ if (string == NULL) {
             } else if (data.a_long == INT_LEN_LONG) {
               *va_arg(args, long *) = (long)output_count(&data);
             } else if (data.a_long == INT_LEN_LONG_LONG) {
-              *va_arg(args, int64_t *) = (int64_t)output_count(&data);
+              *va_arg(args, snprintf_i64 *) = (snprintf_i64)output_count(&data);
             } else { /* an int takes at most INT_MAX, as the return value does */
               *va_arg(args, int *) = output_length(output_count(&data));
             }
