@@ -306,8 +306,14 @@ MU_TEST(test_int_dec_width_31_and_align_left) {
 
 MU_TEST(test_long_long_unsigned_sign_flags) {
 	unsigned long long u = 1234567890;
+#ifdef SNPRINTF_STRICT
+	/* an unsigned conversion never prints a sign, so + and space are refused */
+	mu_assert_int_eq(-1, snprintf(msg, sizeof(msg), "%+llu", u));
+	mu_assert_int_eq(-1, snprintf(msg, sizeof(msg), "% llu", u));
+#else
 	snprintf(msg, sizeof(msg), "%+llu % llu", u, u);
 	mu_check(strcmp(msg, "1234567890 1234567890") == 0);
+#endif
 }
 
 #ifdef __clang__
@@ -1185,8 +1191,16 @@ MU_TEST(test_unsigned_long_max) {
 }
 
 MU_TEST(test_unsigned_ignores_plus_and_space_flags) {
-	int ret = snprintf(msg, sizeof(msg), "%+u % u %+x", 5u, 5u, 5u);
+	int ret;
+#ifdef SNPRINTF_STRICT
+	/* an unsigned conversion never prints a sign, so + and space are refused */
+	mu_assert_int_eq(-1, snprintf(msg, sizeof(msg), "%+u", 5u));
+	mu_assert_int_eq(-1, snprintf(msg, sizeof(msg), "% u", 5u));
+	mu_assert_int_eq(-1, snprintf(msg, sizeof(msg), "%+x", 5u));
+#else
+	ret = snprintf(msg, sizeof(msg), "%+u % u %+x", 5u, 5u, 5u);
 	TEST(5, "5 5 5", ret);
+#endif
 
 	ret = snprintf(msg, sizeof(msg), "%+d % d", 5, 5);
 	TEST(5, "+5  5", ret);

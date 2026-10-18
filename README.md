@@ -119,8 +119,12 @@ When enabled, malformed or unsupported format specifiers return `-1` instead of 
 | `%s`       | width, `-` and a precision         | `+`, space, `#`, `0`                         |
 | `%p`       | width, `-` and a precision         | `+`, space, `#`, `0` (`%+p`)                 |
 | `%n`       | a length modifier                  | any flag, width or precision (`%5n`)         |
+| `%u` / `%o` / `%x` / `%X` | width, `-`, `#`, `0` | `+`, space (`%+u`, `% u`)                    |
+| `%d` / `%i` | all the flags                      | —                                            |
 
-The flags of the integer conversions are not checked.
+The flags of the signed integer conversions are not checked. The strict mode
+refuses the `+` and space flags for the unsigned integer conversions, which
+never print a sign (`%+u` and `% u` fail).
 
 For example, enable it for the project build with:
 

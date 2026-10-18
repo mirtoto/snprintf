@@ -2027,6 +2027,12 @@ if (string == NULL) {
           case 'u': { /* unsigned decimal integer */
             snprintf_i64 ll;
             INTEGER_ARG(&data, unsigned, ll);
+#ifdef SNPRINTF_STRICT
+            /* an unsigned conversion never prints a sign */
+            if (data.is_plus || data.is_space) {
+              return fail(&data);
+            }
+#endif
             decimal(&data, ll);
             is_continue = 0;
             break;
@@ -2044,6 +2050,12 @@ if (string == NULL) {
           case 'o': { /* octal (always unsigned) */
             snprintf_i64 ll;
             INTEGER_ARG(&data, unsigned, ll);
+#ifdef SNPRINTF_STRICT
+            /* an unsigned conversion never prints a sign */
+            if (data.is_plus || data.is_space) {
+              return fail(&data);
+            }
+#endif
             octal(&data, ll);
             is_continue = 0;
             break;
@@ -2053,6 +2065,12 @@ if (string == NULL) {
           case 'X': { /* hexadecimal (always unsigned) */
             snprintf_i64 ll;
             INTEGER_ARG(&data, unsigned, ll);
+#ifdef SNPRINTF_STRICT
+            /* an unsigned conversion never prints a sign */
+            if (data.is_plus || data.is_space) {
+              return fail(&data);
+            }
+#endif
             hex(&data, ll);
             is_continue = 0;
             break;
