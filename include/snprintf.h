@@ -133,10 +133,19 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  * ignored. The sign of NaN is not printed, and negative zero keeps a minus
  * sign.
  *
- * An infinity, a not-a-number and the sign of a zero are told from the bits of
- * the double, so the conversions also work when the code is built with
- * -ffast-math, -ffinite-math-only or -fno-signed-zeros. Printing an infinity
- * used to never return with the first two.
+ * The significand and the exponent of the double are taken from its bits, and
+ * no arithmetic is done on the value at all, so the conversions also work
+ * when the code is built with -ffast-math, -ffinite-math-only or
+ * -fno-signed-zeros. The first one turns on the flush-to-zero and the
+ * denormals-are-zero modes of the FPU, which lose a subnormal number, and
+ * drops the comparisons that find an infinity or a not-a-number. Printing an
+ * infinity used to never return.
+ *
+ * This needs a double of the IEEE 754 binary64 format, which every target
+ * with the 53-bit mantissa the floating-point conversions need has. On a
+ * target whose double is not of that format the value is normalized with
+ * arithmetic instead, and the conversions are then not exact with
+ * -ffast-math.
  * 
  * # Differences to the C library
  * 
@@ -208,8 +217,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *  SNPRINTF_LEGACY_LENGTH          | return and store the number of characters
  *                                  | written into the buffer instead of the
  *                                  | length of the whole output, see above
- *  SNPRINTF_USE_MATH               | use modf() of math.h, and signbit() where
- *                                  | double is not IEEE 754 binary64, see below
+ *  SNPRINTF_USE_MATH               | use signbit() of math.h for the sign of a
+ *                                  | zero, on a target whose double is not
+ *                                  | IEEE 754 binary64, see below
  *  SNPRINTF_FLOAT_INTEGRAL_DIGITS  | digits of the integral part of a double,
  *                                  | 309 by default, a smaller number saves
  *                                  | stack but bigger numbers are printed as

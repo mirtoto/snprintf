@@ -2,8 +2,8 @@
 
 /**
  * Portable snprintf() implementation.
- * @version 3.2
- *  
+ * @version 3.3
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -19,6 +19,23 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  * 
  * Revision History:
+ *
+ * @version 3.3
+ * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - Fast math, again: the significand and the exponent of a double are taken
+ *    from its bits now, and no arithmetic is done on the value at all. Before,
+ *    the integral and the fractional parts of a number were split with
+ *    floating-point arithmetic, and -ffast-math turns on the flush-to-zero and
+ *    the denormals-are-zero modes of the FPU, which lose a subnormal number:
+ *    it was printed as a zero then, and five unit tests failed.
+ *  - The integral and the fractional parts of a number are split with integer
+ *    arithmetic now, also for the biggest numbers, which no longer go through
+ *    a double that is halved until it fits into an integer.
+ *  - The helper modf() of the math.h backend is not used any more, the split
+ *    does not need it. signbit() is still used for the sign of a zero on a
+ *    target whose double is not IEEE 754 binary64.
+ *  - CI builds the unit tests with -ffast-math and runs them, for gcc and
+ *    clang, so that the claim about the fast math stays true.
  *
  * @version 3.2
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
@@ -659,14 +676,20 @@ static int integer_field(const struct DATA *p, size_t digits,
 }
 
 /*
- * An infinity, a not-a-number and the sign of a zero are told from the bits of
- * the double, not by comparing it. With -ffast-math, or just -ffinite-math-only,
- * the compiler assumes that a number is never infinite or not-a-number and
- * drops a comparison made to find one, and then the conversion of an infinity
- * never ends. With -fno-signed-zeros it forgets the sign of a zero. The bits
- * are not touched by any of these options. It needs a double of the IEEE 754
- * binary64 format, which every target with the 53-bit mantissa the
- * floating-point conversions need has.
+ * The significand and the exponent of a double are told from its bits, not by
+ * comparing it or by doing arithmetic on it. With -ffast-math, or just
+ * -ffinite-math-only, the compiler assumes that a number is never infinite or
+ * not-a-number and drops a comparison made to find one, and then the conversion
+ * of an infinity never ends. With -fno-signed-zeros it forgets the sign of a
+ * zero. The bits are not touched by any of these options.
+ *
+ * The arithmetic is what loses the subnormal numbers: -ffast-math turns on
+ * the flush-to-zero and the denormals-are-zero modes of the FPU, which flush a
+ * subnormal result to zero and treat a subnormal operand as zero. A subnormal
+ * read from its bits is exact, while one the arithmetic works on is lost.
+ *
+ * It needs a double of the IEEE 754 binary64 format, which every target with
+ * the 53-bit mantissa the floating-point conversions need has.
  */
 #if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024 && \
     (!defined(SNPRINTF_NO_LONGLONG) || ULONG_MAX > 0xffffffffUL)
@@ -700,46 +723,104 @@ static int has_minus(double d) {
 }
 
 /**
- * Split @p real into its integral and fractional parts.
+ * A finite double as a significand and a binary exponent:
+ * value = significand * 2^exponent.
  *
- * The default implementation stays self-contained; SNPRINTF_USE_MATH uses
- * modf() for the split.
+ * The significand is an integer of at most 53 bits and the exponent is the
+ * power of two the value is scaled by. The sign is not part of it: the
+ * magnitude of the number is what is converted, and the sign is printed aside.
  */
-static double integral(double real, double *ip) {
-#ifdef SNPRINTF_USE_MATH
-  if (real < 0.) {
-    real = -real;
-  }
+struct BINARY {
+  snprintf_u64 significand; /**< the significand of the value */
+  int exponent;            /**< the binary exponent of the value */
+};
 
-  return modf(real, ip);
+/**
+ * Get the significand and the exponent of the magnitude of @p d, which must be
+ * a finite number.
+ *
+ * With SNPRINTF_DOUBLE_BITS the bits of the double give them, so that no
+ * arithmetic touches the value at all. That is what makes the conversions work
+ * with -ffast-math: it flushes the subnormal numbers to zero and treats them
+ * as zero in the arithmetic, so a subnormal read from its bits is exact, while
+ * one the arithmetic works on is lost.
+ *
+ * Without it the value is normalized by halving and doubling it, which is
+ * exact, but the subnormal numbers are lost when the code is built with
+ * -ffast-math, and their conversion is then not exact.
+ */
+static void binary_of(double d, struct BINARY *b) {
+#ifdef SNPRINTF_DOUBLE_BITS
+  const snprintf_u64 bits = double_bits(d);
+  const snprintf_u64 exponent = (bits >> 52) & 0x7ffU;
+  const snprintf_u64 mantissa = bits & (((snprintf_u64)1 << 52) - 1);
+
+  /* the sign bit is not part of the magnitude */
+  if (exponent == 0) { /* a subnormal number, or a zero */
+    b->significand = mantissa;
+    b->exponent = -1074;
+  } else {
+    b->significand = mantissa | ((snprintf_u64)1 << 52);
+    b->exponent = (int)exponent - 1075;
+  }
 #else
-  /* equal to zero ? */
-  if (real == 0.) {
-    *ip = 0.;
-    return 0.;
+  int scale = 52;
+
+  if (d < 0.) {
+    d = -d;
   }
 
-  /* negative number ? */
-  if (real < 0.) {
-    real = -real;
+  if (d == 0.) {
+    b->significand = 0;
+    b->exponent = 0;
+    return;
   }
 
-  /* a fraction ? */
-  if (real < 1.) {
-    *ip = 0.;
-    return real;
+  while (d >= 2.) { /* halve it: exact, and it cannot overflow */
+    d /= 2.;
+    scale--;
   }
 
-  /* from 2^52 on every double is integral already */
-  if (real >= 4503599627370496.) {
-    *ip = real;
-    return 0.;
+  while (d < 1.) { /* double it: exact, and it cannot overflow */
+    d *= 2.;
+    scale++;
   }
 
-  /* the real work :-) */
-  *ip = (double)(snprintf_u64)real; /* truncation is exact */
-  return (real - *ip);
+  b->significand = (snprintf_u64)(d * 4503599627370496.); /* 2^52 */
+  b->exponent = -scale;
 #endif
+}
+
+/**
+ * Split @p value into its integral and fractional parts.
+ *
+ * The fractional part is below one and the integral part is a whole number,
+ * which is not always a small one: it is a significand and an exponent, like
+ * the value itself.
+ */
+static void binary_split(const struct BINARY *value,
+    struct BINARY *integral_part, struct BINARY *fraction_part) {
+  const snprintf_u64 significand = value->significand;
+  const int exponent = value->exponent;
+
+  if (exponent >= 0) { /* the value is a whole number */
+    integral_part->significand = significand;
+    integral_part->exponent = exponent;
+    fraction_part->significand = 0;
+    fraction_part->exponent = 0;
+  } else if (exponent <= -64) { /* the value is below one */
+    integral_part->significand = 0;
+    integral_part->exponent = 0;
+    fraction_part->significand = significand;
+    fraction_part->exponent = exponent;
+  } else {
+    const int shift = -exponent;
+
+    integral_part->significand = significand >> shift;
+    integral_part->exponent = 0;
+    fraction_part->significand = significand & (((snprintf_u64)1 << shift) - 1);
+    fraction_part->exponent = exponent;
+  }
 }
 
 /**
@@ -776,28 +857,32 @@ static double integral(double real, double *ip) {
 #define EXPONENT_3_DIGIT_THRESHOLD 100
 
 /**
- * Convert the non-negative, integral @p value to base 10^9 limbs without any
- * loss of precision. The least significant limb comes first.
+ * Convert the whole @p value to base 10^9 limbs without any loss of precision.
+ * The least significant limb comes first.
  *
- * Values below 2^64 are converted with integer arithmetic. Bigger values are
- * a 64-bit integer multiplied by a power of two (exact for a double), which
- * is done on the limbs, 30 bits at a time.
+ * The value is a significand and an exponent, so it is converted with integer
+ * arithmetic only: the significand goes to the limbs and the exponent shifts
+ * them to the left. A value below 2^64 is one limb of the significand and a
+ * shift, a bigger one is a bigger shift.
  *
- * @param value Finite value to convert.
+ * @param value Whole value to convert.
  * @param limbs Array of INTEGER_LIMBS limbs.
  *
  * @return Number of limbs (at least 1), or 0 if @p value does not fit.
  */
-static size_t integer_limbs(double value, snprintf_u32 *limbs) {
-  snprintf_u64 n;
+static size_t integer_limbs(const struct BINARY *value, snprintf_u32 *limbs) {
+  snprintf_u64 n = value->significand;
   size_t used = 0, i;
-  int shift = 0;
+  int shift = value->exponent;
 
-  while (value >= 18446744073709551616.) { /* 2^64 */
-    value /= 2.; /* exact, only the exponent changes */
-    shift++;
+  if (shift < 0) { /* not a whole number: only its integral part is taken */
+    if (shift <= -64) {
+      n = 0;
+    } else {
+      n >>= -shift;
+    }
+    shift = 0;
   }
-  n = (snprintf_u64)value;
 
   do {
     if (used == INTEGER_LIMBS) {
@@ -828,14 +913,14 @@ static size_t integer_limbs(double value, snprintf_u32 *limbs) {
 }
 
 /**
- * Convert the non-negative, integral @p value to decimal digits without any
- * loss of precision. The digits are stored least significant first, without
- * a terminating '\0'.
+ * Convert the whole @p value to decimal digits without any loss of precision.
+ * The digits are stored least significant first, without a terminating '\0'.
  *
  * @return Number of digits (at least 1), or 0 if @p value needs more than
  *         @p size digits.
  */
-static size_t integer_digits(double value, char *output, size_t size) {
+static size_t integer_digits(const struct BINARY *value, char *output,
+    size_t size) {
   snprintf_u32 limbs[INTEGER_LIMBS];
   size_t used = integer_limbs(value, limbs);
   size_t count = 0, i;
@@ -867,10 +952,10 @@ static size_t integer_digits(double value, char *output, size_t size) {
 }
 
 /**
- * Get the first @p count + 1 digits of the non-negative, integral @p value,
- * most significant first, and tell if the digits after them are all zero.
+ * Get the first @p count + 1 digits of the whole @p value, most significant
+ * first, and tell if the digits after them are all zero.
  *
- * @param value Finite value to convert.
+ * @param value Whole value to convert.
  * @param count Number of digits wanted, the next one is always added.
  * @param output Buffer for @p count + 1 digits, without a terminating '\0'.
  * @param total Number of digits of @p value.
@@ -878,7 +963,7 @@ static size_t integer_digits(double value, char *output, size_t size) {
  *
  * @return 1 on success, 0 if @p value does not fit.
  */
-static int integer_top(double value, size_t count, char *output,
+static int integer_top(const struct BINARY *value, size_t count, char *output,
     size_t *total, int *sticky) {
   snprintf_u32 limbs[INTEGER_LIMBS];
   size_t used = integer_limbs(value, limbs);
@@ -938,35 +1023,39 @@ struct FRACTION {
   size_t first;                   /**< lowest limb that can be non-zero */
 };
 
-/** Set @p f to @p value, where 0 <= @p value < 1. */
-static void fraction_init(struct FRACTION *f, double value) {
-  snprintf_u64 mantissa;
+/**
+ * Set @p f to @p value, where 0 <= @p value < 1.
+ *
+ * The value is a significand and an exponent, so it is put into the limbs
+ * with a shift, and no arithmetic on a floating-point number is done at all.
+ */
+static void fraction_init(struct FRACTION *f, const struct BINARY *value) {
+  snprintf_u64 significand = value->significand;
   snprintf_u32 low, high;
   size_t i, words;
-  int scale = 52;
+  int scale;
   int bits;
 
   for (i = 0; i < FRACTION_LIMBS; i++) {
     f->limbs[i] = 0;
   }
   f->first = FRACTION_LIMBS;
-  if (value <= 0.) {
+  if (significand == 0) {
     return;
   }
 
-  /* Normalize value to [1.0, 2.0) so mantissa fits in 53 bits.
-   * value = mantissa * 2^-scale, with 2^52 <= mantissa < 2^53 */
-  while (value < 1.) {
-    value *= 2.; /* exact, only the exponent changes */
-    scale++;
+  /* limbs = significand * 2^(FRACTION_LIMBS * 32 + exponent) */
+  scale = FRACTION_LIMBS * 32 + value->exponent;
+  if (scale < 0) { /* the value is below the last bit of the fraction */
+    return;
   }
-  mantissa = (snprintf_u64)(value * 4503599627370496.); /* 2^52 */
-
-  /* limbs = mantissa * 2^(FRACTION_LIMBS * 32 - scale) */
-  words = (size_t)(FRACTION_LIMBS * 32 - scale) / 32;
-  bits = (FRACTION_LIMBS * 32 - scale) % 32;
-  low = (snprintf_u32)(mantissa & 0xffffffffUL);
-  high = (snprintf_u32)(mantissa >> 32);
+  words = (size_t)scale / 32;
+  bits = scale % 32;
+  if (words >= FRACTION_LIMBS) {
+    return;
+  }
+  low = (snprintf_u32)(significand & 0xffffffffUL);
+  high = (snprintf_u32)(significand >> 32);
   f->limbs[words] = low << bits;
   if (words + 1 < FRACTION_LIMBS) {
     f->limbs[words + 1] = (high << bits) | (bits != 0 ? low >> (32 - bits) : 0);
@@ -1067,7 +1156,8 @@ static int fraction_rest(const struct FRACTION *f) {
  *
  * @return The result of fraction_rest(): 0, 1 or 2.
  */
-static int fraction_digits(double value, size_t count, char *output) {
+static int fraction_digits(const struct BINARY *value, size_t count,
+    char *output) {
   struct FRACTION f;
   size_t i;
 
@@ -1080,33 +1170,67 @@ static int fraction_digits(double value, size_t count, char *output) {
 }
 
 /**
- * Return an ASCII representation of the integral and fraction
- * part of the @p number.
+ * Tell if the fraction @p value is below, at or above one half.
  *
- * The digits are those of the exact binary value of @p number, rounded to
- * @p precision digits to nearest, ties to even, like the C library does.
+ * @retval 0 The fraction is below one half.
+ * @retval 1 The fraction is exactly one half.
+ * @retval 2 The fraction is above one half.
  */
-static void floattoa(double number, int precision,
+static int fraction_compare_half(const struct BINARY *value) {
+  snprintf_u64 significand = value->significand;
+  int bits = 0;
+
+  if (significand == 0) {
+    return 0;
+  }
+
+  while (significand != 0) { /* the number of bits of the significand */
+    significand >>= 1;
+    bits++;
+  }
+
+  if (bits + value->exponent < 0) { /* the fraction is below one half */
+    return 0;
+  }
+
+  if (bits + value->exponent > 0) { /* the fraction is above one half */
+    return 2;
+  }
+
+  /* The fraction is in [0.5, 1): it is one half only when the significand is
+     a power of two. */
+  return (value->significand & (value->significand - 1)) == 0 ? 1 : 2;
+}
+
+/**
+ * Return an ASCII representation of the integral and fraction
+ * part of the @p value.
+ *
+ * The digits are those of the exact binary value of @p value, rounded to
+ * @p precision digits to nearest, ties to even, like the C library does.
+ *
+ * @param value Magnitude of the number to convert.
+ * @param is_negative Tell if the number is negative, which is also true for
+ *                    negative zero.
+ */
+static void floattoa(const struct BINARY *value, int is_negative, int precision,
     char *output_integral, size_t output_integral_size,
     char *output_fraction, size_t output_fraction_size) {
 
+  struct BINARY integral_value, fraction_value;
   size_t i, j;
   size_t digits;
-  int is_negative = 0;
   int rest;
-  double ip;
-  double fraction;
 
   /* for negative numbers */
-  if (has_minus(number)) {
-    number = -number;
-    is_negative = 1;
+  if (is_negative) {
     output_integral_size--; /* sign consume one digit */
   }
 
-  fraction = integral(number, &ip);
+  binary_split(value, &integral_value, &fraction_value);
+
   /* do the integral part */
-  i = integer_digits(ip, output_integral, output_integral_size - 1);
+  i = integer_digits(&integral_value, output_integral, output_integral_size - 1);
 
   /* integral part exceeds buffer, fill with 9s */
   if (i == 0) {
@@ -1120,7 +1244,7 @@ static void floattoa(double number, int precision,
   if (digits > output_fraction_size - 1) {
     digits = output_fraction_size - 1;
   }
-  rest = fraction_digits(fraction, digits, output_fraction);
+  rest = fraction_digits(&fraction_value, digits, output_fraction);
   output_fraction[digits] = '\0';
 
   /* round to nearest, ties to even */
@@ -1170,25 +1294,26 @@ static void floattoa(double number, int precision,
 }
 
 /**
- * Convert the positive, finite @p value to @p count significant decimal
- * digits, rounded to nearest, ties to even, like the C library does.
+ * Convert the positive @p value to @p count significant decimal digits, rounded
+ * to nearest, ties to even, like the C library does.
  *
- * @param value Value to convert, greater than zero.
+ * @param value Magnitude of the value to convert, greater than zero.
  * @param count Number of digits, at most MAX_PRECISION + 1.
  * @param digits Buffer for @p count digits, without a terminating '\0'.
  * @param exp10 Decimal exponent of the first digit, after rounding.
  */
-static void significant_digits(double value, size_t count, char *digits,
-    int *exp10) {
+static void significant_digits(const struct BINARY *value, size_t count,
+    char *digits, int *exp10) {
   char top[MAX_PRECISION + 3];
-  double ip;
-  double fraction = integral(value, &ip);
+  struct BINARY integral_value, fraction_value;
   size_t i, n = 0;
   int rest;
 
-  if (ip >= 1.) { /* the digits come from the integral part first */
+  binary_split(value, &integral_value, &fraction_value);
+
+  if (integral_value.significand != 0) { /* the digits come from the integral part first */
     int sticky = 0;
-    if (!integer_top(ip, count, top, &n, &sticky)) {
+    if (!integer_top(&integral_value, count, top, &n, &sticky)) {
       /* The integral part exceeds the buffer: the biggest number that fits is
          SNPRINTF_FLOAT_INTEGRAL_DIGITS nines, and zeros after them. */
       for (i = 0; i < count; i++) {
@@ -1201,19 +1326,20 @@ static void significant_digits(double value, size_t count, char *digits,
     if (n > count) {
       int next = top[count] - '0';
       memcpy(digits, top, count);
-      rest = next > 5 ? 2 : next < 5 ? 0 : (sticky || fraction != 0.) ? 2 : 1;
+      rest = next > 5 ? 2 : next < 5 ? 0 :
+          (sticky || fraction_value.significand != 0) ? 2 : 1;
     } else {
       memcpy(digits, top, n);
       if (n < count) {
-        rest = fraction_digits(fraction, count - n, digits + n);
+        rest = fraction_digits(&fraction_value, count - n, digits + n);
       } else {
-        rest = fraction > .5 ? 2 : fraction == .5 ? 1 : 0;
+        rest = fraction_compare_half(&fraction_value);
       }
     }
   } else { /* the digits come from the fraction, after some zeros */
     struct FRACTION f;
     int digit = 0, zeros = 0;
-    fraction_init(&f, fraction);
+    fraction_init(&f, &fraction_value);
     zeros = fraction_skip_zeros(&f);
     while (zeros <= MAX_LEADING_ZEROS && (digit = fraction_next(&f)) == 0) {
       zeros++;
@@ -1627,10 +1753,13 @@ static void strip_trailing_zeros(char *fraction) {
 static void floating(struct DATA *p, double d) {
   char integral[MAX_FLOAT_INTEGRAL_SIZE];
   char fraction[MAX_FRACTION_SIZE];
+  struct BINARY value;
+  const int minus = has_minus(d);
 
-  floattoa(d, p->precision,
+  binary_of(d, &value);
+  floattoa(&value, minus, p->precision,
     integral, sizeof(integral), fraction, sizeof(fraction));
-  float_emit(p, integral, fraction, has_minus(d), 0, 0);
+  float_emit(p, integral, fraction, minus, 0, 0);
 }
 
 /**
@@ -1641,17 +1770,20 @@ static void exponent(struct DATA *p, double d) {
   char integral[MAX_INTEGRAL_SIZE];
   char fraction[MAX_FRACTION_SIZE];
   char digits[MAX_PRECISION + 2];
+  struct BINARY value;
   int log = 0;
   int minus = has_minus(d);
   size_t k;
 
+  binary_of(d, &value);
+
   /* the first digit, then precision digits more */
-  if (d == 0.) {
+  if (value.significand == 0) {
     for (k = 0; k <= (size_t)p->precision; k++) {
       digits[k] = '0';
     }
   } else {
-    significant_digits(minus ? -d : d, (size_t)p->precision + 1, digits, &log);
+    significant_digits(&value, (size_t)p->precision + 1, digits, &log);
   }
   k = 0;
   if (minus) {
@@ -1682,16 +1814,19 @@ static void general(struct DATA *p, double d) {
   char integral[MAX_PRECISION + 4]; /* the '-', at most precision digits, '\0' */
   char fraction[MAX_FRACTION_SIZE];
   char digits[MAX_PRECISION + 1];
+  struct BINARY value;
   const size_t count = (size_t)p->precision;
   const int minus = has_minus(d);
   int log = 0;
   int exp_digits = 0;
   size_t k = 0;
 
-  if (d == 0.) {
+  binary_of(d, &value);
+
+  if (value.significand == 0) {
     memset(digits, '0', count);
   } else {
-    significant_digits(minus ? -d : d, count, digits, &log);
+    significant_digits(&value, count, digits, &log);
   }
 
   if (minus) {

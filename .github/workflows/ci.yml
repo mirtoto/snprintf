@@ -35,6 +35,44 @@ jobs:
       - name: Differential fuzz test against the C library
         run: make -C fuzz check CC=${{ matrix.cc }} DEFS="${{ matrix.defs }}"
 
+  test-fast-math:
+    name: ${{ matrix.cc }} -ffast-math
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v5
+
+      # -ffast-math turns on the flush-to-zero and the denormals-are-zero modes
+      # of the FPU at startup, so a subnormal number is lost by any arithmetic
+      # done on it. The conversions take the significand and the exponent of a
+      # double from its bits, and must be exact anyway.
+      - name: Compile snprintf.c without warnings
+        run: |
+          ${{ matrix.cc }} -std=c99 -Wall -Wextra -Wpedantic -Werror \
+            -ffast-math -DUSE_SNPRINTF_PREFIX -Iinclude \
+            -c src/snprintf.c -o /dev/null
+
+      - name: Unit tests
+        run: |
+          main=$(find . -name main.c | head -n 1)
+          ${{ matrix.cc }} -Wall -Wextra -g -O1 -ffast-math \
+            -DUSE_SNPRINTF_PREFIX -Iinclude \
+            -c src/snprintf.c -o snprintf-fastmath.o
+          ${{ matrix.cc }} -Wall -Wextra -g -O1 \
+            -DUSE_SNPRINTF_PREFIX -Iinclude \
+            -c "$main" -o main.o
+          ${{ matrix.cc }} -Wall -Wextra -g -O1 \
+            -DUSE_SNPRINTF_PREFIX -Iinclude \
+            -c src/tests-snprintf.c -o tests-snprintf.o
+          # The link with -ffast-math is what turns on the flush-to-zero and the
+          # denormals-are-zero modes of the FPU at startup.
+          ${{ matrix.cc }} -ffast-math \
+            snprintf-fastmath.o main.o tests-snprintf.o -lm -o tests
+          ./tests
+
   test-32bit:
     name: gcc 32 bits ${{ matrix.fp }}
     runs-on: ubuntu-latest

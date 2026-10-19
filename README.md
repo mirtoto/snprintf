@@ -173,7 +173,7 @@ This preserves the default compatibility model while giving embedded or security
 
 ### Optional math library support
 
-The floating-point conversion is self-contained and does not require `math.h` or libm. Define `SNPRINTF_USE_MATH` to use `modf()` from `math.h` (and `signbit()`, on a target whose `double` is not IEEE 754 binary64) instead of the built-in helpers. On toolchains where these functions are provided by a separate math library, link with `-lm`, which the Makefile of this project adds for that backend on its own:
+The floating-point conversion is self-contained and does not require `math.h` or libm. Define `SNPRINTF_USE_MATH` to use `signbit()` from `math.h` for the sign of a zero, on a target whose `double` is not IEEE 754 binary64, instead of the built-in helper. The `modf()` helper of the earlier versions is not used any more: the integral and the fractional parts of a number are split with integer arithmetic, which is exact. On toolchains where these functions are provided by a separate math library, link with `-lm`, which the Makefile of this project adds for that backend on its own:
 
 ```sh
 make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g"
@@ -186,7 +186,7 @@ make CFLAGS="-DUSE_SNPRINTF_PREFIX -DSNPRINTF_USE_MATH -Wall -Wextra -g"
 | `USE_SNPRINTF_PREFIX`            | Name the functions `my_snprintf()` and `my_vsnprintf()` and define `snprintf` and `vsnprintf` as macros for them, to link with the C library. The tests need it. Without it a build with `_FORTIFY_SOURCE` calls `__snprintf_chk()` of the C library, not this implementation, see [Usage](#usage).                         |
 | `SNPRINTF_STRICT`                | Return `-1` for a malformed or unsupported specifier.                                                                                                                                    |
 | `SNPRINTF_LEGACY_LENGTH`         | Return and store the number of characters written into the buffer instead of the length of the whole output, as before version 3.2.                                                |
-| `SNPRINTF_USE_MATH`              | Use `modf()` of `math.h`, and `signbit()` where `double` is not IEEE 754 binary64.                                                                                                                                                |
+| `SNPRINTF_USE_MATH`              | Use `signbit()` of `math.h` for the sign of a zero, on a target whose `double` is not IEEE 754 binary64.                                                                                                                                 |
 | `SNPRINTF_NO_LONGLONG`           | Use `long` / `unsigned long` instead of `long long` / `unsigned long long` for the internal accumulator, so the code compiles on pre-C99 toolchains that lack `long long`. Floating-point conversions need a 53-bit mantissa and will not be exact on targets where `unsigned long` is narrower than 64 bits. |
 | `SNPRINTF_FLOAT_INTEGRAL_DIGITS` | Digits of the integral part of a `double`, `309` by default, which is enough for every `double`. A smaller number saves stack, but bigger numbers are then printed as a row of nines. Set it when compiling `snprintf.c`. |
 | `SNPRINTF_FLOAT_PRECISION`       | Digits of the precision of `%e`, `%E`, `%f`, `%F`, `%g` and `%G`, `29` by default. The C standard asks for at least `999`, so set it higher, e.g. to `999`, to be conformant. The stack grows by about 3 bytes per digit for `%e` and `%g`, and by about 1 for `%f`. A bigger precision is lowered to this one, or fails with `-1` in the strict mode. Set it when compiling `snprintf.c`. |
@@ -252,7 +252,9 @@ A bigger precision of a finite floating-point conversion is lowered to `SNPRINTF
 
 The digits are those of the exact binary value of the `double`, rounded to nearest, ties to even, like the C library does: `%.2f` of `1.005` is `1.00` and `%.0f` of `2.5` is `2`. Every finite `double` is supported, subnormals too, as long as the integral part has no more than `SNPRINTF_FLOAT_INTEGRAL_DIGITS` digits, which is enough for all of them by default.
 
-Infinity is printed as `inf` and not a number as `nan`, in capitals for `F`, `E` and `G`, and the `0` flag is ignored for them. The sign of NaN is not printed. Negative zero is printed with a minus sign. An infinity, a not-a-number and the sign of a zero are told from the bits of the `double`, so the conversions also work with `-ffast-math`, `-ffinite-math-only` and `-fno-signed-zeros`.
+Infinity is printed as `inf` and not a number as `nan`, in capitals for `F`, `E` and `G`, and the `0` flag is ignored for them. The sign of NaN is not printed. Negative zero is printed with a minus sign. The significand and the exponent of the `double` are taken from its bits and no arithmetic is done on the value, so the conversions also work with `-ffast-math`, `-ffinite-math-only` and `-fno-signed-zeros`: `-ffast-math` turns on the flush-to-zero and the denormals-are-zero modes of the FPU, which lose a subnormal number, and drops the comparisons that find an infinity or a not-a-number.
+
+That needs a `double` of the IEEE 754 binary64 format, which every target with the 53-bit mantissa the floating-point conversions need has. On a target whose `double` is not of that format the value is normalized with arithmetic instead, and the conversions are then not exact with `-ffast-math`.
 
 The conversion uses integer arithmetic only. Its cost is some stack: `floating()` needs about 600 bytes with the default 309 digits, and about 300 bytes with `-DSNPRINTF_FLOAT_INTEGRAL_DIGITS=40`. `SNPRINTF_FLOAT_PRECISION` adds about 3 bytes per digit on top of that for `%e` and `%g`, and about 1 for `%f`, so `-DSNPRINTF_FLOAT_PRECISION=999` needs about 3.7 kB for `%e` and for `%g` alike: `%g` measures the exponent first, but that call has returned before the digits are printed. These numbers were measured with gcc, another compiler may need a little more or less.
 
@@ -278,7 +280,7 @@ make -C fuzz check SAN= CFLAGS="-O2 -m32"            # 32 bits, without sanitize
 make -C fuzz run SEED=1234 ITERATIONS=1000000        # reproduce a failure
 ```
 
-The unit tests and the fuzz test run in CI for gcc and clang, in all four builds (the default one, `SNPRINTF_STRICT`, `SNPRINTF_LEGACY_LENGTH` and `SNPRINTF_USE_MATH`), and in 32 bits for `-m32` and `-m32 -msse2 -mfpmath=sse`, see `.github/workflows/ci.yml`.
+The unit tests and the fuzz test run in CI for gcc and clang, in all four builds (the default one, `SNPRINTF_STRICT`, `SNPRINTF_LEGACY_LENGTH` and `SNPRINTF_USE_MATH`), and in 32 bits for `-m32` and `-m32 -msse2 -mfpmath=sse`, see `.github/workflows/ci.yml`. A separate job builds the unit tests with `-ffast-math` and runs them, so that the claim about the fast math stays true.
 
 ## Authors
 
