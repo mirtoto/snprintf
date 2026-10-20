@@ -77,9 +77,10 @@ static int written_length(void) {
 #endif
 
 /* Precision limit of the floating-point conversions, as in snprintf.c. The tests
-   which check the lowering of a bigger one have to follow it. */
+   which check the lowering of a bigger one have to follow it. It is 999 by
+   default, so a default build converts any precision up to 999 in full. */
 #ifndef SNPRINTF_FLOAT_PRECISION
-#define SNPRINTF_FLOAT_PRECISION 29
+#define SNPRINTF_FLOAT_PRECISION 999
 #endif
 
 
@@ -799,8 +800,8 @@ MU_TEST(test_extreme_format_width_and_precision) {
 	// a measuring call is refused as well: its length would be the lowered one
 	mu_assert_int_eq(-1, snprintf(NULL, 0, wide_precision_format, 1.25));
 #else
-	// the default mode lowers it to SNPRINTF_FLOAT_PRECISION, 29 unless the
-	// project raised the limit when compiling snprintf.c
+	// the default mode lowers it to SNPRINTF_FLOAT_PRECISION, 999 unless the
+	// project lowered the limit when compiling snprintf.c
 	const size_t limit = SNPRINTF_FLOAT_PRECISION;
 	char clamped[SNPRINTF_FLOAT_PRECISION + 8];
 	char produced[SNPRINTF_FLOAT_PRECISION + 8];

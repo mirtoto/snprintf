@@ -215,8 +215,9 @@
  *    carry out of multiplying it by ten;
  *  - %f, %e and %g all use these digits and round to nearest, ties to even,
  *    so the output is the same as the C library gives for IEEE-754 doubles;
- *  - the precision is limited to SNPRINTF_FLOAT_PRECISION digits, which a
- *    project can raise to the 999 the C standard asks for.
+ *  - the precision is limited to SNPRINTF_FLOAT_PRECISION digits, 999 by
+ *    default, which is what the C standard asks for at a minimum; a project
+ *    can lower it to save stack.
  */
 
 #include <float.h>
@@ -463,20 +464,23 @@ static void terminate_buffer(struct DATA *p) {
 /**
  * Maximum precision of a finite floating-point conversion, in digits.
  *
- * The C standard asks for at least 999 of them, but the exact conversion keeps a
- * buffer of this many digits on the stack, which costs about 3 bytes per digit in
- * the deepest call chain of %e and %g, and about 1 for %f. Set it higher when
- * compiling snprintf.c if a project needs more, at the cost of that stack:
+ * The C standard asks for at least 999 of them, which is the default. The
+ * exact conversion keeps a buffer of this many digits on the stack, which costs
+ * about 3 bytes per digit in the deepest call chain of %e and %g, and about 1
+ * for %f. Lower it when compiling snprintf.c if a project needs to save stack:
  *
- *     -DSNPRINTF_FLOAT_PRECISION=999
+ *     -DSNPRINTF_FLOAT_PRECISION=40
  *
- * A bigger precision of a finite value is lowered to this one. The strict mode
- * fails instead, so that a caller gets -1 and knows the output would not be what
- * it asked for. An infinity and a not-a-number have no digits, so their precision
- * is never limited and never fails.
+ * A bigger precision of a finite value is lowered to this one. In the default
+ * mode the lowering is silent: the return value matches the shortened output,
+ * so a caller gets no signal that %.30f or any higher precision already differs
+ * from libc. Compile with -DSNPRINTF_STRICT to fail with -1 instead, so the
+ * caller knows the output is not what it asked for. An infinity and a
+ * not-a-number have no digits, so their precision is never limited and never
+ * fails.
  */
 #ifndef SNPRINTF_FLOAT_PRECISION
-#define SNPRINTF_FLOAT_PRECISION 29
+#define SNPRINTF_FLOAT_PRECISION 999
 #endif
 #define MAX_PRECISION SNPRINTF_FLOAT_PRECISION
 

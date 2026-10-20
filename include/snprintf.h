@@ -168,8 +168,12 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    flag, width or precision with %n, like %5%, %l%, %+c, %#c, %.2c, %+p and
  *    %5n. The default mode takes them as it always did.
  *  - The precision of the floating-point conversions is limited to
- *    SNPRINTF_FLOAT_PRECISION digits, 29 by default. A bigger one is lowered
- *    to it, or refused with -1 in the strict mode.
+ *    SNPRINTF_FLOAT_PRECISION digits, 999 by default, which is what the C
+ *    standard asks for at a minimum. A bigger one is lowered to it; in the
+ *    default mode the lowering is silent and the return value matches the
+ *    shortened output, so a caller gets no signal that %.30f already differs
+ *    from libc when the limit is below 30. The strict mode refuses it with
+ *    -1 instead, so the caller knows.
  *  - The integral part of a floating-point number is limited to
  *    SNPRINTF_FLOAT_INTEGRAL_DIGITS digits, 309 by default and enough for every
  *    double. A smaller value saves stack, and a number with a longer integral
@@ -225,14 +229,17 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *                                  | stack but bigger numbers are printed as
  *                                  | a row of nines, set it for snprintf.c
  *  SNPRINTF_FLOAT_PRECISION        | digits of the precision of %e, %E, %f,
- *                                  | %F, %g and %G, 29 by default. The C
- *                                  | standard asks for at least 999, so set
- *                                  | this higher, e.g. to 999, at the cost of
- *                                  | the stack, which grows by about 3 bytes
- *                                  | per digit for %e and %g and by about 1
- *                                  | for %f. A bigger precision is lowered to
- *                                  | this one, or fails in the strict mode,
- *                                  | set it for snprintf.c
+ *                                  | %F, %g and %G, 999 by default, which is
+ *                                  | what the C standard asks for at a
+ *                                  | minimum. A project can lower it, e.g. to
+ *                                  | 29, to save stack: the stack grows by
+ *                                  | about 3 bytes per digit for %e and %g
+ *                                  | and by about 1 for %f. A bigger precision
+ *                                  | is lowered to this one, silently in the
+ *                                  | default mode (the return value matches
+ *                                  | the shortened output, so there is no
+ *                                  | signal), or fails in the strict mode.
+ *                                  | Set it when compiling snprintf.c
  * 
  * @param string Output buffer, or NULL to calculate the length of the output.
  * @param length Size of the output buffer @p string, including the terminating
