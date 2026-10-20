@@ -1886,7 +1886,7 @@ MU_TEST(test_strict_mode_terminates_the_buffer_on_failure) {
 		ret = snprintf(b.text, sizeof(b.text), formats[f], 7,
 		    (const char *)"x", 1.5);
 		mu_assert_int_eq(-1, ret);
-		mu_assert_string_eq("ok ", b.text); /* terminated after the text */
+		mu_check(b.text[0] == '\0'); /* nothing was written before the failure */
 		for (i = 0; i < sizeof(b.guard); i++) {
 			mu_check(b.guard[i] == 0x5a);
 		}
@@ -1937,6 +1937,27 @@ MU_TEST(test_strict_mode_rejects_what_the_standard_does_not_define) {
 		int ret = snprintf(msg, sizeof(msg), formats[f], 7, 7, 7);
 		mu_assert(ret == -1, formats[f]);
 	}
+}
+
+MU_TEST(test_strict_mode_is_transactional) {
+	// a rejected specifier must not store what an earlier %n already stored
+	int counter = -1;
+	int ret = snprintf(msg, sizeof(msg), "ab%n%5%", &counter);
+	mu_assert_int_eq(-1, ret);
+	mu_assert_int_eq(-1, counter);
+	mu_assert_int_eq(0, written_length());
+
+	// the same for a width or a flag refused for %%
+	counter = -1;
+	ret = snprintf(msg, sizeof(msg), "%n%#%", &counter);
+	mu_assert_int_eq(-1, ret);
+	mu_assert_int_eq(-1, counter);
+
+	// a valid format still stores, also after earlier specifiers
+	counter = -1;
+	ret = snprintf(msg, sizeof(msg), "ab%n%5d", &counter, 42);
+	TEST(7, "ab   42", ret);
+	mu_assert_int_eq(2, counter);
 }
 #endif
 
@@ -2549,6 +2570,7 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_strict_mode_rejects_a_specifier_out_of_order);
 	MU_RUN_TEST(test_strict_mode_rejects_malformed_length_modifiers);
 	MU_RUN_TEST(test_strict_mode_rejects_what_the_standard_does_not_define);
+	MU_RUN_TEST(test_strict_mode_is_transactional);
 #endif
 	MU_RUN_TEST(test_what_the_standard_defines_for_c_p_n_and_percent);
 #ifndef SNPRINTF_LEGACY_LENGTH

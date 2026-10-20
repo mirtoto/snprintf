@@ -163,6 +163,10 @@ The flags of the signed integer conversions are not checked. The strict mode
 refuses the `+` and space flags for the unsigned integer conversions, which
 never print a sign (`%+u` and `% u` fail).
 
+A rejected format is atomic: the whole format is validated before anything is
+written, so a failure returns `-1` without writing output and without storing
+any `%n` value.
+
 For example, enable it for the project build with:
 
 ```sh

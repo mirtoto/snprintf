@@ -2046,6 +2046,167 @@ static int has_flags_width_or_precision(const struct DATA *p) {
 static int float_length_is_valid(const struct DATA *p) {
   return p->len_count == 0 || (p->len_char == 'l' && p->len_count == 1);
 }
+
+/**
+ * Validate the whole format string in the strict mode, without writing any
+ * output and without consuming any argument, so that the formatting pass that
+ * follows cannot reject it: a malformed format terminates the buffer and fails
+ * before anything is written and before any %n stores anything, which makes
+ * strict mode transactional. p->pf points at the start of the format on entry
+ * and is left at the end of it on success.
+ *
+ * @retval 0 The whole format is valid.
+ * @retval -1 The strict mode refuses it; the buffer is terminated.
+ */
+static int snprintf_validate_format(struct DATA *p) {
+  int done = 0;
+
+  for (; *p->pf != '\0'; p->pf++) {
+    if (*p->pf != '%') {
+      continue;
+    }
+    p->pf++; /* the '%' itself, the flags follow it */
+    if (conv_flags(p) != 0) {
+      return fail(p);
+    }
+    done = 0;
+    while (*p->pf != '\0' && !done) {
+      switch (*(++p->pf)) {
+        case 'l':
+          if (!length_modifier(p, 'l')) {
+            return fail(p);
+          }
+          if (p->a_long == INT_LEN_LONG) {
+            p->a_long = INT_LEN_LONG_LONG;
+          } else {
+            p->a_long = INT_LEN_LONG;
+          }
+          break;
+
+        case 'h':
+          if (!length_modifier(p, 'h')) {
+            return fail(p);
+          }
+          if (p->a_long == INT_LEN_SHORT) {
+            p->a_long = INT_LEN_CHAR;
+          } else {
+            p->a_long = INT_LEN_SHORT;
+          }
+          break;
+
+        case 'z':
+          if (!length_modifier(p, 'z')) {
+            return fail(p);
+          }
+          p->a_long = sizeof(size_t) <= sizeof(int) ? INT_LEN_DEFAULT :
+              sizeof(size_t) <= sizeof(long) ? INT_LEN_LONG : INT_LEN_LONG_LONG;
+          break;
+
+        case 't':
+          if (!length_modifier(p, 't')) {
+            return fail(p);
+          }
+          p->a_long = sizeof(ptrdiff_t) <= sizeof(int) ? INT_LEN_DEFAULT :
+              sizeof(ptrdiff_t) <= sizeof(long) ? INT_LEN_LONG : INT_LEN_LONG_LONG;
+          break;
+
+        case 'j':
+          if (!length_modifier(p, 'j')) {
+            return fail(p);
+          }
+          p->a_long = INT_LEN_LONG_LONG;
+          break;
+
+        case 'f':
+        case 'F':
+        case 'e':
+        case 'E':
+        case 'g':
+        case 'G':
+          if (!float_length_is_valid(p)) {
+            return fail(p);
+          }
+          done = 1;
+          break;
+
+        case 'u':
+        case 'o':
+        case 'x':
+        case 'X':
+          if (p->is_plus || p->is_space) {
+            return fail(p);
+          }
+          done = 1;
+          break;
+
+        case 'i':
+        case 'd':
+          done = 1;
+          break;
+
+        case 'c':
+          if (p->a_long != INT_LEN_DEFAULT || p->is_square || p->is_plus ||
+              p->is_space || p->pad == '0' || p->is_dot) {
+            return fail(p);
+          }
+          done = 1;
+          break;
+
+        case 's':
+          if (p->is_square || p->is_plus || p->is_space || p->pad == '0' ||
+              p->a_long != INT_LEN_DEFAULT) {
+            return fail(p);
+          }
+          done = 1;
+          break;
+
+        case 'p':
+          if (p->len_count != 0 || p->is_square || p->is_plus ||
+              p->is_space || p->pad == '0') {
+            return fail(p);
+          }
+          done = 1;
+          break;
+
+        case 'n':
+          if (has_flags_width_or_precision(p)) {
+            return fail(p);
+          }
+          done = 1;
+          break;
+
+        case '%':
+          if (has_flags_width_or_precision(p) || p->len_count != 0) {
+            return fail(p);
+          }
+          done = 1;
+          break;
+
+        case '\0':
+        case '#':
+        case ' ':
+        case '+':
+        case '*':
+        case '-':
+        case '.':
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+        default:
+          return fail(p);
+      }
+    }
+  }
+
+  return 0;
+}
 #endif
 
 int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, va_list args) {
@@ -2066,6 +2227,16 @@ if (string == NULL) {
   data.pf = format;
   data.counter = 0;
   data.written = 0;
+
+#ifdef SNPRINTF_STRICT
+  /* Validate the whole format before any output is written and before any %n
+     stores anything: a rejected format fails with -1 and leaves nothing
+     behind, so that strict mode stays transactional. */
+  if (snprintf_validate_format(&data) != 0) {
+    return -1;
+  }
+  data.pf = format; /* the validation walk reached the end of the format */
+#endif
 
   /* In the legacy mode nothing more can be written once the buffer is full, so
      the rest of the format is skipped and %n is not stored any more. The strict
