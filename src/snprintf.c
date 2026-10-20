@@ -1230,7 +1230,13 @@ static void floattoa(const struct BINARY *value, int is_negative, int precision,
   binary_split(value, &integral_value, &fraction_value);
 
   /* do the integral part */
-  i = integer_digits(&integral_value, output_integral, output_integral_size - 1);
+  {
+    size_t digit_limit = output_integral_size - 1;
+    if (digit_limit > (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS) {
+      digit_limit = (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS;
+    }
+    i = integer_digits(&integral_value, output_integral, digit_limit);
+  }
 
   /* integral part exceeds buffer, fill with 9s */
   if (i == 0) {
