@@ -19,13 +19,21 @@ ifeq ($(OS),Windows_NT)
 EXECUTABLE	:= main.exe
 SOURCEDIRS	:= $(SRC)
 INCLUDEDIRS	:= $(INCLUDE)
-LIBDIRS		:= $(LIB)
+ifneq ($(wildcard $(LIB)),)
+  LIBDIRS		:= $(LIB)
+else
+  LIBDIRS		:=
+endif
 MKDIR		:= mkdir
 else
 EXECUTABLE	:= main
 SOURCEDIRS	:= $(shell find $(SRC) -type d)
 INCLUDEDIRS	:= $(shell find $(INCLUDE) -type d)
-LIBDIRS		:= $(shell find $(LIB) -type d)
+ifneq ($(wildcard $(LIB)),)
+  LIBDIRS		:= $(shell find $(LIB) -type d)
+else
+  LIBDIRS		:=
+endif
 MKDIR		:= mkdir -p
 endif
 # Link libm only when the optional math backend is enabled.
@@ -34,7 +42,11 @@ ifneq ($(filter -DSNPRINTF_USE_MATH,$(CFLAGS)),)
 endif
 
 CINCLUDES	:= $(patsubst %,-I%, $(INCLUDEDIRS:%/=%))
+ifneq ($(strip $(LIBDIRS)),)
 CLIBS		:= $(patsubst %,-L%, $(LIBDIRS:%/=%))
+else
+CLIBS		:=
+endif
 
 SOURCES		:= $(wildcard $(patsubst %,%/*.c, $(SOURCEDIRS)))
 OBJECTS		:= $(SOURCES:.c=.o)
