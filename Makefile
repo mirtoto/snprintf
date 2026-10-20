@@ -1,5 +1,4 @@
-CC		:= gcc
-CFLAGS	:= -DUSE_SNPRINTF_PREFIX -Wall -Wextra -g
+CFLAGS	:= -DUSE_SNPRINTF_PREFIX -Wall -Wextra -g -MMD -MP
 
 # Tests intentionally use format strings that exceed INT_MAX to verify
 # overflow handling. GCC's -Wformat-overflow cannot be suppressed via
@@ -50,6 +49,7 @@ endif
 
 SOURCES		:= $(wildcard $(patsubst %,%/*.c, $(SOURCEDIRS)))
 OBJECTS		:= $(SOURCES:.c=.o)
+DEPS		:= $(OBJECTS:.o=.d)
 
 all: $(BIN)/$(EXECUTABLE)
 
@@ -57,6 +57,7 @@ all: $(BIN)/$(EXECUTABLE)
 clean:
 	-$(RM) $(BIN)/$(EXECUTABLE)
 	-$(RM) $(OBJECTS)
+	-$(RM) $(DEPS)
 	-$(RM) *.gcda *.gcno *.gcov src/*.gcda src/*.gcno
 
 coverage:
@@ -85,3 +86,5 @@ $(BIN)/$(EXECUTABLE): $(OBJECTS) | $(BIN)/
 
 $(BIN)/:
 	$(MKDIR) $@
+
+-include $(DEPS)
