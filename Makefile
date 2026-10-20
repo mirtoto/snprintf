@@ -5,7 +5,7 @@ CFLAGS	:= -DUSE_SNPRINTF_PREFIX -Wall -Wextra -g
 # overflow handling. GCC's -Wformat-overflow cannot be suppressed via
 # #pragma because it is evaluated during optimization, so disable it
 # for the test file only.
-src/tests-snprintf.o: CFLAGS += -Wno-format-overflow
+src/tests-snprintf.o: override CFLAGS += -Wno-format-overflow
 COVFLAGS	:=
 
 BIN		:= bin
