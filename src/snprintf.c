@@ -242,8 +242,8 @@ static int snprintf_hex_toupper(int c) {
 
 
 /**
- * Internal integer types, under names of this file. They are not snprintf_i64,
- * snprintf_u64 and snprintf_u32: those are the names of <stdint.h>, and defining them
+ * Internal integer types, under names of this file. They are not int64_t,
+ * uint64_t and uint32_t: those are the names of <stdint.h>, and defining them
  * here fails as soon as any header in scope has them, with another underlying
  * type, like long against long long for snprintf_i64 on LP64, which a -include of
  * <stdint.h> or <stdlib.h> is enough for. They are defined here and not in the
@@ -278,7 +278,7 @@ typedef unsigned long snprintf_u32;
 #error "snprintf.c needs an unsigned type of exactly 32 bits"
 #endif
 
-/* The maximum of size_t, which SNPRINTF_SIZE_MAX of <stdint.h> is, without C99. */
+/* The maximum of size_t, which SIZE_MAX of <stdint.h> is, without C99. */
 #define SNPRINTF_SIZE_MAX ((size_t)-1)
 
 
@@ -421,15 +421,19 @@ static size_t output_count(const struct DATA *p) {
 
 /** Put an optional '+' sign in the output buffer when the flag is set. */
 #define PUT_PLUS(positive, p)                           \
-  if ((positive) && (p)->is_plus) {                     \
-    PUT_CHAR('+', p);                                   \
-  }
+  do {                                                  \
+    if ((positive) && (p)->is_plus) {                   \
+      PUT_CHAR('+', p);                                 \
+    }                                                   \
+  } while (0)
 
 /** Put an optional leading space if the number is positive and the flag is set. */
 #define PUT_SPACE(positive, p)                          \
-  if ((p)->is_space && !(p)->is_plus && (positive)) {   \
-    PUT_CHAR(' ', p);                                   \
-  }
+  do {                                                  \
+    if ((p)->is_space && !(p)->is_plus && (positive)) { \
+      PUT_CHAR(' ', p);                                 \
+    }                                                   \
+  } while (0)
 
 /** Pad before content (left side) for right-aligned fields. */
 #define PAD_BEFORE(p)                                   \
@@ -1871,6 +1875,15 @@ static void general(struct DATA *p, double d) {
   float_emit(p, integral, fraction, minus, exp_digits, log);
 }
 
+#ifdef SNPRINTF_STRICT
+#define STRICT_REQUIRE(condition)                       \
+  if (!(condition)) {                                   \
+    return -1;                                          \
+  }
+#else
+#define STRICT_REQUIRE(condition)
+#endif
+
 /**
  * Initialize and parse the flags, the width and the precision of
  * a conversion specifier.
@@ -1886,15 +1899,6 @@ static void general(struct DATA *p, double d) {
  * @retval 0 The specifier is fine so far.
  * @retval -1 The strict mode refuses it. The permissive mode never does.
  */
-#ifdef SNPRINTF_STRICT
-#define STRICT_REQUIRE(condition)                       \
-  if (!(condition)) {                                   \
-    return -1;                                          \
-  }
-#else
-#define STRICT_REQUIRE(condition)
-#endif
-
 static int conv_flags(struct DATA *p) {
   int stage = 0; /* 0: flags, 1: width given, 2: after '.', 3: precision given */
 
@@ -2219,12 +2223,12 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
   /* Count the required output length without writing to a buffer. A buffer of
      zero bytes cannot even hold the '\0', so it is a measuring call, like the
      C library treats it. */
-  if (length < 1) {
-    string = NULL;
-  }
-if (string == NULL) {
-      length = SNPRINTF_SIZE_MAX;
-    }
+   if (length < 1) {
+     string = NULL;
+   }
+   if (string == NULL) {
+     length = SNPRINTF_SIZE_MAX;
+   }
 
   data.ps_size = length == 0 ? 0 : length - 1; /* leave room for '\0' */ 
   data.ps = string;
