@@ -98,7 +98,7 @@ static int check(const char *fmt, ...) {
     printf("the fuzz test is broken, the C library gave %d for \"%s\"\n", want_len, fmt);
     exit(2);
   }
-  cap = 1 + rnd((unsigned)want_len + 2); /* from 1 to want_len + 2 */
+  cap = rnd((unsigned)want_len + 3); /* from 0 to want_len + 2 */ 
   memset(cut, 0x5a, sizeof cut);
   cut_len = my_vsnprintf(cut, cap, fmt, d);
 
@@ -107,7 +107,7 @@ static int check(const char *fmt, ...) {
   va_end(c);
   va_end(d);
 
-  keep = (size_t)want_len < cap - 1 ? (size_t)want_len : cap - 1;
+  if (cap == 0) { keep = 0; } else { keep = (size_t)want_len < cap - 1 ? (size_t)want_len : cap - 1; }
 #ifdef SNPRINTF_LEGACY_LENGTH
   /* the legacy mode returns the number of characters written, not the length
      of the whole output */
@@ -119,7 +119,7 @@ static int check(const char *fmt, ...) {
     problem = "output";
   } else if (null_len != want_len) {
     problem = "length for a NULL buffer";
-  } else if (cut_len != expected_cut_len || memcmp(cut, want, keep) != 0 || cut[keep] != '\0') {
+  } else if (cap == 0 ? cut_len != expected_cut_len : (cut_len != expected_cut_len || memcmp(cut, want, keep) != 0 || cut[keep] != '\0')) {
     problem = "truncated output";
   } else {
     for (i = cap; i < cap + 8; i++) {
