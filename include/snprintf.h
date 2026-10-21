@@ -157,6 +157,9 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
  *    flags with %p, any flag, width, precision or length with %%, and any
  *    flag, width or precision with %n, like %5%, %l%, %+c, %#c, %.2c, %+p and
  *    %5n. The default mode takes them as it always did.
+ *  - The strict mode is transactional: the whole format is validated before
+ *    anything is written, so a rejected format fails with -1 without writing
+ *    any output and without storing any %n value.
  *  - The precision of the floating-point conversions is limited to
  *    SNPRINTF_FLOAT_PRECISION digits, 999 by default, which is what the C
  *    standard asks for at a minimum. A bigger one is lowered to it; in the

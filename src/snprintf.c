@@ -22,6 +22,18 @@
  *
  * @version 3.3
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - The default precision of the floating-point conversions is 999 now, the
+ *    minimum the C standard asks for, and not 29 any more: a default build
+ *    converts any precision up to 999 in full. A bigger one is lowered to the
+ *    limit silently, so the caller gets no signal that %.30f already differs
+ *    from libc. Compile with -DSNPRINTF_STRICT to fail with -1 instead, or
+ *    lower the limit, e.g. to 29, to save stack: the stack grows by about 3
+ *    bytes per digit for %e and %g, and by about 1 for %f.
+ *  - The strict mode is transactional: the whole format is validated before
+ *    anything is written, so a rejected format fails with -1 without writing
+ *    any output and without storing any %n value. Before, the output up to
+ *    the offending specifier was written, and an earlier %n had stored its
+ *    value already.
  *  - Fast math, again: the significand and the exponent of a double are taken
  *    from its bits now, and no arithmetic is done on the value at all. Before,
  *    the integral and the fractional parts of a number were split with
@@ -34,6 +46,15 @@
  *  - The helper modf() of the math.h backend is not used any more, the split
  *    does not need it. signbit() is still used for the sign of a zero on a
  *    target whose double is not IEEE 754 binary64.
+ *  - The limit of the digits of the integral part of a number is the same for
+ *    a negative number and for a positive one now: the sign does not take a
+ *    digit of the buffer any more, so a smaller SNPRINTF_FLOAT_INTEGRAL_DIGITS
+ *    gives the same number of digits for both.
+ *  - A buffer of zero bytes is a measuring call: nothing is written and the
+ *    length of the whole output is returned, and the differential fuzz test
+ *    covers that case now.
+ *  - The unused macro SNPRINTF_STRICT_MODE is gone from the header: only
+ *    SNPRINTF_STRICT is part of the interface.
  *  - CI builds the unit tests with -ffast-math and runs them, for gcc and
  *    clang, so that the claim about the fast math stays true.
  *
@@ -2223,14 +2244,14 @@ int SNPRINTF_PREFIX(vsnprintf)(char *string, size_t length, const char *format, 
   /* Count the required output length without writing to a buffer. A buffer of
      zero bytes cannot even hold the '\0', so it is a measuring call, like the
      C library treats it. */
-   if (length < 1) {
-     string = NULL;
-   }
-   if (string == NULL) {
-     length = SNPRINTF_SIZE_MAX;
-   }
+  if (length < 1) {
+    string = NULL;
+  }
+  if (string == NULL) {
+    length = SNPRINTF_SIZE_MAX;
+  }
 
-  data.ps_size = length == 0 ? 0 : length - 1; /* leave room for '\0' */ 
+  data.ps_size = length == 0 ? 0 : length - 1; /* leave room for '\0' */
   data.ps = string;
   data.pf = format;
   data.counter = 0;
