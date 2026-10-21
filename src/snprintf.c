@@ -2226,7 +2226,7 @@ if (string == NULL) {
       length = SNPRINTF_SIZE_MAX;
     }
 
-  data.ps_size = length - 1; /* leave room for '\0' */
+  data.ps_size = length == 0 ? 0 : length - 1; /* leave room for '\0' */ 
   data.ps = string;
   data.pf = format;
   data.counter = 0;

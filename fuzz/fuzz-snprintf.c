@@ -115,6 +115,7 @@ static int check(const char *fmt, ...) {
 #else
   expected_cut_len = want_len;
 #endif
+  if (cap == 0) { expected_cut_len = want_len; }
   if (got_len != want_len || strcmp(got, want) != 0) {
     problem = "output";
   } else if (null_len != want_len) {
