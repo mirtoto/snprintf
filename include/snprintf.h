@@ -1,4 +1,9 @@
-/* Copyright (C) 2019 Miroslaw Toton, mirtoto@gmail.com*/
+/* Copyright (C) 2019-2026 Miroslaw Toton, mirtoto@gmail.com
+ *
+ * This library is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of the
+ * License, or (at your option) any later version. */
 #ifndef SNPRINTF_H_
 #define SNPRINTF_H_
 

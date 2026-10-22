@@ -293,7 +293,9 @@ make -C fuzz run SEED=1234 ITERATIONS=1000000        # reproduce a failure
 
 The unit tests and the fuzz test run in CI for gcc and clang, in all four builds (the default one, `SNPRINTF_STRICT`, `SNPRINTF_LEGACY_LENGTH` and `SNPRINTF_USE_MATH`), and in 32 bits for `-m32` and `-m32 -msse2 -mfpmath=sse`, see `.github/workflows/ci.yml`. A separate job builds the unit tests with `-ffast-math` and runs them, so that the claim about the fast math stays true.
 
-## Authors
+## License
+
+This project is licensed under the GNU Lesser General Public License v2.1 or later. See `LICENSE`.
 
 - Mirosław Toton, <mirtoto@gmail.com>
 - Alain Magloire, <alainm@rcsm.ee.mcgill.ca>
