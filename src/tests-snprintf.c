@@ -2470,9 +2470,11 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_negative_and_sign_flags);
 	MU_RUN_TEST(test_double_g_boundaries_and_trim);
 	MU_RUN_TEST(test_double_e_rounds_mantissa);
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 	MU_RUN_TEST(test_double_extreme_exponents_and_precision);
 	MU_RUN_TEST(test_double_finite_limits);
 	MU_RUN_TEST(test_double_large_fixed_truncates_safely);
+#endif
 	MU_RUN_TEST(test_special_float_values);
 	MU_RUN_TEST(test_extreme_format_width_and_precision);
 	MU_RUN_TEST(test_double_null_buffer_and_truncation);
@@ -2484,9 +2486,13 @@ MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_double_large_integer_values_are_exact);
 	MU_RUN_TEST(test_double_fraction_digits_are_exact);
 	MU_RUN_TEST(test_double_sign_flags_of_zero_and_both_flags);
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 	MU_RUN_TEST(test_double_e_and_g_digits_are_exact);
+#endif
 	MU_RUN_TEST(test_double_negative_zero);
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 	MU_RUN_TEST(test_double_big_integral_part_is_exact);
+#endif
 	MU_RUN_TEST(test_prefix_is_not_skipped_when_buffer_is_null_or_full);
 #endif
 
@@ -2579,7 +2585,9 @@ MU_TEST_SUITE(test_suite) {
 #endif
 	MU_RUN_TEST(test_every_valid_order_of_a_specifier);
 #if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 	MU_RUN_TEST(test_special_floats_from_their_bits);
+#endif
 #endif
 #if (!defined(SNPRINTF_FLOAT_PRECISION) || SNPRINTF_FLOAT_PRECISION >= 29) && \
     (!defined(SNPRINTF_FLOAT_INTEGRAL_DIGITS) || SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 40)
