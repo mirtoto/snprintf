@@ -72,7 +72,7 @@ static double rnd01(void) {
 }
 
 
-#define BUFFER_SIZE 1200
+#define BUFFER_SIZE 1400
 
 static unsigned long checked;
 static unsigned long failed;
@@ -368,7 +368,7 @@ static int fuzz_float(void) {
   char fmt[128];
 
   /* the # flag of %g is left out, glibc drops digits when rounding carries */
-  make_spec(&s, conversion == 'g' || conversion == 'G' ? "-+ 0" : "-+ #0", 29, "", conversion);
+  make_spec(&s, conversion == 'g' || conversion == 'G' ? "-+ 0" : "-+ #0", 999, "", conversion);
   make_format(fmt, &s);
   sprintf(value_text, "%.17g", v);
   return CALL(fmt, s, v);
