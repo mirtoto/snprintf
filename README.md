@@ -75,6 +75,8 @@ int main(void) {
 
 There are two ways to build it.
 
+> **Note:** the Makefile tracks dependencies on headers and sources only, not on compiler flags. Changing `CFLAGS` therefore rebuilds nothing unless you run `make clean` first. Run `make clean` whenever you switch build modes or change `CFLAGS`.
+
 **Next to the C library (recommended).** Define `USE_SNPRINTF_PREFIX`. The functions are then called `my_snprintf()` and `my_vsnprintf()`, and `snprintf.h` makes `snprintf` and `vsnprintf` macros for them, so the code above calls this implementation and still links with the C library:
 
 ```sh
