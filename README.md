@@ -4,6 +4,10 @@ Lightweight, dependency-light implementation of the C `snprintf()` family. It is
 
 The project aims to stay portable and close to libc behavior for the supported conversions, while still keeping the implementation small and easy to embed.
 
+## Stack cost (embedded builds)
+
+The default `SNPRINTF_FLOAT_PRECISION` is `999`, which the C standard asks for as a minimum. That costs real stack: with gcc `-O2` the default build measures `general()` at about 3152 bytes, `exponent()` at about 2160 bytes and `floating()` at about 1600 bytes. For small embedded stacks consider lowering `SNPRINTF_FLOAT_PRECISION` (e.g. to `29`) or `SNPRINTF_FLOAT_INTEGRAL_DIGITS` when compiling `snprintf.c`.
+
 ## Features
 
 - portable formatter for common `printf`-style conversions
@@ -261,7 +265,7 @@ Infinity is printed as `inf` and not a number as `nan`, in capitals for `F`, `E`
 
 That needs a `double` of the IEEE 754 binary64 format, which every target with the 53-bit mantissa the floating-point conversions need has. On a target whose `double` is not of that format the value is normalized with arithmetic instead, and the conversions are then not exact with `-ffast-math`.
 
-The conversion uses integer arithmetic only. Its cost is some stack: `floating()` needs about 600 bytes with the default 309 digits, and about 300 bytes with `-DSNPRINTF_FLOAT_INTEGRAL_DIGITS=40`. `SNPRINTF_FLOAT_PRECISION` adds about 3 bytes per digit on top of that for `%e` and `%g`, and about 1 for `%f`, so `-DSNPRINTF_FLOAT_PRECISION=999` needs about 3.7 kB for `%e` and for `%g` alike: `%g` measures the exponent first, but that call has returned before the digits are printed. These numbers were measured with gcc, another compiler may need a little more or less.
+The conversion uses integer arithmetic only. Its cost is some stack: `floating()` needs about 1600 bytes with the default precision, `exponent()` about 2160 bytes and `general()` about 3152 bytes (gcc `-O2`). `SNPRINTF_FLOAT_PRECISION` adds about 3 bytes per digit on top of that for `%e` and `%g`, and about 1 for `%f`, so `-DSNPRINTF_FLOAT_PRECISION=999` needs about 3.7 kB for `%e` and for `%g` alike: `%g` measures the exponent first, but that call has returned before the digits are printed. These numbers were measured with gcc, another compiler may need a little more or less.
 
 ## Testing
 
