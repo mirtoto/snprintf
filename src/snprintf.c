@@ -1278,18 +1278,17 @@ static void floattoa(const struct BINARY *value, int is_negative, int precision,
   binary_split(value, &integral_value, &fraction_value);
 
   /* do the integral part */
-  {
-    size_t digit_limit = output_integral_size - 1;
-    if (digit_limit > (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS) {
-      digit_limit = (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS;
-    }
-    i = integer_digits(&integral_value, output_integral, digit_limit);
+  size_t digit_limit = output_integral_size - 1;
+  if (digit_limit > (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS) {
+    digit_limit = (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS;
   }
-
-  /* integral part exceeds buffer, fill with 9s */
-  if (i == 0) {
-    for (i = 0; i < output_integral_size - 1; ++i) {
-      output_integral[i] = '9';
+  {
+    i = integer_digits(&integral_value, output_integral, digit_limit);
+    /* integral part exceeds buffer, fill with 9s */
+    if (i == 0) {
+      for (i = 0; i < digit_limit; ++i) {
+        output_integral[i] = '9';
+      }
     }
   }
 
@@ -1322,7 +1321,7 @@ static void floattoa(const struct BINARY *value, int is_negative, int precision,
       }
     }
     if (carry) {
-      if (i < output_integral_size - 1) {
+      if (i < digit_limit) {
         output_integral[i++] = '1';
       } else { /* no room for one more digit, stay at the biggest value */
         for (j = 0; j < i; j++) {
