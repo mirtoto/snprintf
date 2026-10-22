@@ -2,7 +2,7 @@
 
 /**
  * Portable snprintf() implementation.
- * @version 3.3
+ * @version 3.4
  *
  * This library is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as
@@ -20,8 +20,20 @@
  * 
  * Revision History:
  *
- * @version 3.3
+ * @version 3.4
  * @author Miroslaw Toton (mirtoto), mirtoto@gmail.com
+ *  - Fix the digit count of SNPRINTF_FLOAT_INTEGRAL_DIGITS for negative
+ *    numbers: an overflow on the last digit is no longer lost.
+ *  - Update the stack cost figures in the documentation and make them more
+ *    prominent.
+ *  - Raise the fuzz test float precision to 999 and the buffer size to 1400.
+ *  - Fix the .gitignore encoding and ignore stray artifacts.
+ *  - Relicense from GPL-2.0-or-later to LGPL-2.1-or-later, so the library can
+ *    be copied into proprietary projects without forcing them under the GPL.
+ *    License notices added to snprintf.h and the README; the FSF address
+ *    corrected to the current one.
+ *
+ * @version 3.3
  *  - The default precision of the floating-point conversions is 999 now, the
  *    minimum the C standard asks for, and not 29 any more: a default build
  *    converts any precision up to 999 in full. A bigger one is lowered to the
