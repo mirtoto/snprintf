@@ -968,6 +968,9 @@ static size_t integer_digits(const struct BINARY *value, char *output,
       if (count == size) {
         return 0;
       }
+      if (count >= (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS) {
+        return 0;
+      }
       output[count++] = (char)('0' + v % 10);
       v /= 10;
     }
@@ -1009,6 +1012,10 @@ static int integer_top(const struct BINARY *value, size_t count, char *output,
   }
   *total = LIMB_DIGITS * (used - 1) + lead;
   *sticky = 0;
+
+  if (*total > (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS) {
+    return 0;
+  }
 
   for (i = used; i-- > 0 && taken <= count;) {
     v = limbs[i];
