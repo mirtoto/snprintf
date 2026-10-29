@@ -684,6 +684,7 @@ MU_TEST(test_double_e_rounds_mantissa) {
 	TEST(12, "1.000000e+01", ret);
 }
 
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 MU_TEST(test_double_extreme_exponents_and_precision) {
 	int ret = snprintf(msg, sizeof(msg), "%e %e", 1e-300, 1e300);
 	TEST(27, "1.000000e-300 1.000000e+300", ret);
@@ -694,7 +695,9 @@ MU_TEST(test_double_extreme_exponents_and_precision) {
 	ret = snprintf(msg, sizeof(msg), "%.20f", 1e-20);
 	TEST(22, "0.00000000000000000001", ret);
 }
+#endif
 
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 MU_TEST(test_double_finite_limits) {
 	int ret = snprintf(msg, sizeof(msg), "%.6e", DBL_MIN);
 	TEST(13, "2.225074e-308", ret);
@@ -711,7 +714,9 @@ MU_TEST(test_double_finite_limits) {
 	ret = snprintf(msg, sizeof(msg), "%.6g", min_subnormal);
 	TEST(12, "4.94066e-324", ret);
 }
+#endif
 
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 MU_TEST(test_double_large_fixed_truncates_safely) {
 	struct {
 		char output[8];
@@ -725,6 +730,7 @@ MU_TEST(test_double_large_fixed_truncates_safely) {
 	mu_check(buffer.output[7] == '\0');
 	mu_assert_int_eq('X', buffer.canary);
 }
+#endif
 
 MU_TEST(test_special_float_values) {
 	int ret = snprintf(msg, sizeof(msg), "%f %E %G", INFINITY, -INFINITY, NAN);
@@ -1505,6 +1511,7 @@ MU_TEST(test_double_sign_flags_of_zero_and_both_flags) {
 	TEST(12, "+00000012.50", ret);
 }
 
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 MU_TEST(test_double_e_and_g_digits_are_exact) {
 	int ret;
 
@@ -1601,6 +1608,7 @@ MU_TEST(test_double_e_and_g_digits_are_exact) {
 	ret = snprintf(msg, sizeof(msg), "%.2g", 0.000099999);
 	TEST(6, "0.0001", ret);
 }
+#endif
 
 MU_TEST(test_double_negative_zero) {
 	int ret;
@@ -1636,6 +1644,7 @@ MU_TEST(test_double_negative_zero) {
 	TEST(10, "-0.0     |", ret);
 }
 
+#if SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 MU_TEST(test_double_big_integral_part_is_exact) {
 	char big[400];
 	int ret = snprintf(big, sizeof(big), "%.0f", 1e100);
@@ -1658,6 +1667,7 @@ MU_TEST(test_double_big_integral_part_is_exact) {
 	mu_check(strncmp(big, "179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368", 309) == 0);
 	mu_assert_string_eq(".00", big + 309);
 }
+#endif
 
 #if defined(__clang__)
 #pragma clang diagnostic pop
@@ -2268,7 +2278,8 @@ MU_TEST(test_general_flags_width_and_precision) {
 }
 #endif
 
-#if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024
+#if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024 && \
+    SNPRINTF_FLOAT_PRECISION >= 999 && SNPRINTF_FLOAT_INTEGRAL_DIGITS >= 309
 static double double_from_bits(uint64_t bits) {
 	double d;
 
