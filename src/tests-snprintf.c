@@ -83,6 +83,14 @@ static int written_length(void) {
 #define SNPRINTF_FLOAT_PRECISION 999
 #endif
 
+/* Limit of the integral digits of a floating-point number, as in snprintf.c.
+   Without this default the guards below, which compare it with 309, were false
+   in a default build, as an undefined macro is 0 in an #if, and the tests of
+   the biggest doubles were never run. */
+#ifndef SNPRINTF_FLOAT_INTEGRAL_DIGITS
+#define SNPRINTF_FLOAT_INTEGRAL_DIGITS 309
+#endif
+
 
 #if __GNUC__ >= 7
 #pragma GCC diagnostic push

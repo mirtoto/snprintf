@@ -1268,6 +1268,7 @@ static void floattoa(const struct BINARY *value, int is_negative, int precision,
   struct BINARY integral_value, fraction_value;
   size_t i, j;
   size_t digits;
+  size_t digit_limit;
   int rest;
 
   /* for negative numbers */
@@ -1278,7 +1279,7 @@ static void floattoa(const struct BINARY *value, int is_negative, int precision,
   binary_split(value, &integral_value, &fraction_value);
 
   /* do the integral part */
-  size_t digit_limit = output_integral_size - 1;
+  digit_limit = output_integral_size - 1;
   if (digit_limit > (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS) {
     digit_limit = (size_t)SNPRINTF_FLOAT_INTEGRAL_DIGITS;
   }
